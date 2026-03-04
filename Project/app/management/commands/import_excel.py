@@ -1,13 +1,56 @@
 import openpyxl
+import csv
+from pathlib import Path
 from django.core.management.base import BaseCommand
 from app.models import Crane
 from datetime import datetime
 
 class Command(BaseCommand):
-    help = "Import Excel data into Crane model"
+    help = "Import Crane data from Excel (.xlsx/.xlsm/.xltx/.xltm) or CSV (.csv)"
 
     def add_arguments(self, parser):
-        parser.add_argument('file_path', type=str, help="Path to Excel file")
+        parser.add_argument('file_path', type=str, help="Path to Excel/CSV file")
+
+    def _rows_from_file(self, file_path):
+        suffix = Path(file_path).suffix.lower()
+
+        if suffix == '.csv':
+            return self._read_csv_rows(file_path)
+
+        if suffix in {'.xlsx', '.xlsm', '.xltx', '.xltm'}:
+            wb = openpyxl.load_workbook(file_path)
+            sheet = wb.active
+            return list(sheet.iter_rows(values_only=True))
+
+        raise ValueError(
+            "Unsupported file format. Please use one of: .csv, .xlsx, .xlsm, .xltx, .xltm"
+        )
+
+    def _read_csv_rows(self, file_path):
+        encodings = ['utf-8-sig', 'cp1252', 'latin-1', 'utf-16']
+        last_error = None
+
+        for encoding in encodings:
+            try:
+                with open(file_path, mode='r', encoding=encoding, newline='') as csv_file:
+                    sample = csv_file.read(4096)
+                    csv_file.seek(0)
+
+                    try:
+                        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+                    except csv.Error:
+                        dialect = csv.excel
+
+                    reader = csv.reader(csv_file, dialect)
+                    return list(reader)
+            except UnicodeDecodeError as exc:
+                last_error = exc
+                continue
+
+        if last_error:
+            raise last_error
+
+        raise ValueError("Could not read CSV file.")
 
     def clean(self, value):
         """Convert any non-date value into clean string."""
@@ -49,10 +92,12 @@ class Command(BaseCommand):
         file_path = kwargs['file_path']
         print(f"Reading: {file_path}")
 
-        wb = openpyxl.load_workbook(file_path)
-        sheet = wb.active
+        rows = self._rows_from_file(file_path)
 
-        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            print("No data found in file.")
+            return
+
         data_rows = rows[1:]  # skip header
 
         count = 0
@@ -60,6 +105,10 @@ class Command(BaseCommand):
         last_kundenummer = ""
 
         for row in data_rows:
+            row = list(row)
+            if len(row) < 16:
+                row += [None] * (16 - len(row))
+
             lg_value = self.clean(row[3])
             kundenummer_value = self.clean(row[4])
 
