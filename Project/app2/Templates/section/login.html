@@ -1,0 +1,73 @@
+{% load static %}
+<section class="col-md-12" id="main-body">
+    <div class="container">
+        <div class="row">
+            <div class="col-xs-12 main-content">
+
+                <div class="logincontainer with-social">
+
+                    <!-- Centered Heading -->
+                    <div class="text-center">
+                        <div class="header-lined">
+                            <h1><span>Login</span></h1> 
+                        </div>
+                    </div>
+
+                    <div class="providerLinkingFeedback"></div>
+
+                    <!-- NEW FIXED CENTERED BOX -->
+                    <div class="wdes-login-wrapper">
+                        {% if messages %}
+                            {% for message in messages %}
+                                <div style="color:red; text-align:center; margin-bottom:10px;">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+
+                        <form method="post" action="{% url 'login' %}" class="login-form" role="form">
+                            {% csrf_token %}
+
+                            <div class="form-group">
+                                <label class="wdes-label" for="inputEmail">Username</label>
+                                <input type="text" name="username" class="form-control wdes-input-form" id="inputEmail" placeholder="username" autofocus>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="wdes-label" for="inputPassword">Password</label>
+                                <input type="password" name="password" class="form-control wdes-input-form" id="inputPassword" placeholder="Password" autocomplete="off">
+                            </div>
+
+                            <div class="text-center">
+                                <input id="login" type="submit" class="wdes-submit" value="Login"> 
+                                <br><br>
+                                <a href="#" onclick="alert('Please contact your administrator to reset your password.')" class="wdes-2nd-btn">Forgot Password?</a>
+                            </div>
+                        </form>
+
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<!-- Perfect Centering CSS -->
+<style>
+.wdes-login-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    margin-top: 10px;
+}
+
+.login-form {
+    width: 360px;
+    background: #ffffff;
+    padding: 20px 25px;
+    border-radius: 6px;
+}
+</style>

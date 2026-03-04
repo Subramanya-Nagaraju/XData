@@ -1,0 +1,45 @@
+/*
+Theme Name: X-DATA
+Theme URI: http://www.whmcsdes.com
+Description: X-DATA Template
+Version: 1.6
+Author: WHMCSdes
+Author URI: http://whmcsdes.com
+Tags: powerful, host
+*/
+
+
+/* Smart Phones */
+
+@media only screen and (min-width: 160px) and (max-width: 767px) {
+    .map,
+    .phone,
+    .mail,
+    .l-chat {
+        display: block;
+        margin: 10px 15px;
+        text-align: left;
+    }
+    .about,
+    .links-foot {
+        margin-bottom: 40px;
+    }
+    .f-lv2 {
+        padding: 40px 0 0;
+    }
+    .tiles .tile {
+        width: 100%;
+    }
+    .icon-bar {
+        background: #fff !important;
+    }
+}
+
+
+/* iPads (landscape) */
+
+@media only screen and (min-width: 768px) and (max-width: 1200px) {
+    .tiles .tile {
+        width: 47.6%;
+    }
+}

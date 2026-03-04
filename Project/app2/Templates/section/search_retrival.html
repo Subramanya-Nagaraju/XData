@@ -1,0 +1,386 @@
+{% load static %}
+<html>
+<head>
+    <title>RG Erstellt Search</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .container {
+            padding: 20px;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 28px;
+        }
+
+        /* 🎨 IMPROVED FILTER BAR */
+        .filter-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .filter-title {
+            font-weight: bold;
+            margin-bottom: 12px;
+            color: #333;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .filter-group label {
+            font-weight: 600;
+            font-size: 12px;
+            color: #555;
+            text-transform: uppercase;
+        }
+
+        .filter-group select {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            outline: none;
+            background: white;
+            font-size: 14px;
+            cursor: pointer;
+            min-width: 120px;
+            transition: border 0.3s;
+        }
+
+        .filter-group select:hover {
+            border-color: #999;
+        }
+
+        .filter-group select:focus {
+            border-color: #333;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+
+        .filter-btn {
+            padding: 10px 20px;
+            background: black;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+            font-size: 14px;
+        }
+
+        .filter-btn:hover {
+            background: #333;
+        }
+
+        /* 🔝 TOP BAR WITH EXPORT */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 15px;
+        }
+
+        .result-info {
+            font-size: 14px;
+            color: #555;
+            padding: 10px 15px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            border-left: 4px solid black;
+        }
+
+        .export-btn {
+            padding: 10px 16px;
+            background: black;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: background 0.3s;
+        }
+
+        .export-btn:hover {
+            background: #333;
+        }
+
+        /* 🔥 HORIZONTAL SCROLL TABLE */
+        .table-wrapper {
+            overflow-x: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 2800px;
+        }
+
+        th, td {
+            padding: 12px 10px;
+            border: 1px solid #eee;
+            text-align: center;
+            white-space: nowrap;
+            font-size: 13px;
+        }
+
+        th {
+            background: black;
+            color: white;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+
+        th a {
+            color: white;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+        }
+
+        th a:hover {
+            text-decoration: underline;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+
+        tbody tr:hover {
+            background: #f0f0f0;
+        }
+
+        /* Inactive row fade */
+        tr.inactive {
+            opacity: 0.5;
+            background: #e8e8e8 !important;
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 12px;
+            display: inline-block;
+        }
+
+        .status-badge.active {
+            background: #28a745;
+            color: white;
+        }
+
+        .status-badge.inactive {
+            background: #dc3545;
+            color: white;
+        }
+
+        /* 📄 PAGINATION */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .pagination a {
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid #ddd;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+
+        .pagination a:hover {
+            background: #333;
+            color: white;
+            border-color: #333;
+        }
+
+        .pagination-info {
+            padding: 8px 12px;
+            font-weight: 600;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+<h2> Search & Filter</h2>
+
+<!-- Date Filter Section -->
+<div class="filter-section">
+    <form method="GET">
+        <div class="filter-row">
+            <div class="filter-group">
+                <label for="year">Due Year</label>
+                <select name="year" id="year">
+                    <option value="">All Years</option>
+                    {% for y in years %}
+                        <option value="{{ y }}" {% if selected_year == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="month">Month</label>
+                <select name="month" id="month">
+                    <option value="">All Months</option>
+                    {% for m in months %}
+                        <option value="{% if m < 10 %}0{% endif %}{{ m }}" 
+                            {% if selected_month == m|stringformat:"02d" or selected_month|stringformat:"02d" == m|stringformat:"02d" %}selected{% endif %}>
+                            {% if m == 1 %}January{% elif m == 2 %}February{% elif m == 3 %}March{% elif m == 4 %}April{% elif m == 5 %}May{% elif m == 6 %}June{% elif m == 7 %}July{% elif m == 8 %}August{% elif m == 9 %}September{% elif m == 10 %}October{% elif m == 11 %}November{% elif m == 12 %}December{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="day">Day</label>
+                <select name="day" id="day">
+                    <option value="">All Days</option>
+                    {% for d in days %}
+                        <option value="{% if d < 10 %}0{% endif %}{{ d }}" {% if selected_day|stringformat:"02d" == d|stringformat:"02d" %}selected{% endif %}>{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <button class="filter-btn" type="submit">Search</button>
+        </div>
+    </form>
+</div>
+
+<!-- Top Bar: Result Info + Export -->
+<div class="top-bar">
+    
+    <a class="export-btn" href="?year={{ selected_year }}&month={{ selected_month }}&day={{ selected_day }}&sort={{ sort_by }}&order={{ order }}&export=true">
+        Export CSV
+    </a>
+</div>
+
+<!-- Results Table with ALL Columns -->
+<div class="table-wrapper">
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Kran Typ</th>
+            <th>Fabrik Nr</th>
+            <th>Kunde</th>
+            <th>LG</th>
+            <th>Kundenummer</th>
+            <th>Version</th>
+            <th>Serien Nr</th>
+            <th>Tel Nr</th>
+            <th>IP</th>
+            <th>Rueckmeldung</th>
+            <th>IT Nr</th>
+            <th>Kundenkran</th>
+            <th>Lizenz Ja</th>
+            <th>Lizenzdatum</th>
+            <th>Bezahlt bis Rg.erstellt</th>
+            <th>servicemeldung</th>
+            <th>Amount</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for kran in page_obj %}
+        <tr {% if not kran.is_active %}class="inactive"{% endif %}>
+            <td>{{ kran.id }}</td>
+            <td>{{ kran.kran_typ }}</td>
+            <td>{{ kran.fabrik_nr }}</td>
+            <td>{{ kran.kunde }}</td>
+            <td>{{ kran.lg }}</td>
+            <td>{{ kran.kundenummer }}</td>
+            <td>{{ kran.version }}</td>
+            <td>{{ kran.serien_nr }}</td>
+            <td>{{ kran.tel_nr }}</td>
+            <td>{{ kran.ip }}</td>
+            <td>{{ kran.rueckmeldung }}</td>
+            <td>{{ kran.it_nr }}</td>
+            <td>{{ kran.kundenkran }}</td>
+            <td>{{ kran.lizenz_ja }}</td>
+            <td>{{ kran.lizenzdatum }}</td>
+            <td>{{ kran.bezahlt_bis_rg_erstellt }}</td>
+            <td>{{ kran.servicemeldung }}</td>
+            <td>{{ kran.amount }}</td>
+            <td>
+                <form method="post" style="display:flex; justify-content:center; gap:8px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="crane_id" value="{{ kran.id }}">
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button class="filter-btn" name="action" value="mark_paid" type="submit">Mark Paid</button>
+                    <button class="filter-btn" name="action" value="not_paid" type="submit">Not Paid</button>
+                </form>
+            </td>
+
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="20">No data found for the selected filters</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- 📄 PAGINATION -->
+<div class="pagination">
+    {% if page_obj.has_previous %}
+        <a href="?page=1&year={{ selected_year }}&month={{ selected_month }}&day={{ selected_day }}">&laquo; First</a>
+        <a href="?page={{ page_obj.previous_page_number }}&year={{ selected_year }}&month={{ selected_month }}&day={{ selected_day }}">Previous</a>
+    {% endif %}
+
+    <span class="pagination-info">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+    {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}&year={{ selected_year }}&month={{ selected_month }}&day={{ selected_day }}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}&year={{ selected_year }}&month={{ selected_month }}&day={{ selected_day }}">Last &raquo;</a>
+    {% endif %}
+</div>
+
+</div>
+
+</body>
+</html>

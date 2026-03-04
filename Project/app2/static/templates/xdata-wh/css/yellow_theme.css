@@ -1,0 +1,63 @@
+/*
+Theme Name: X-DATA
+Theme URI: http://www.whmcsdes.com
+Description: X-DATA Template
+Version: 1.6
+Author: WHMCSdes
+Author URI: http://whmcsdes.com
+Tags: powerful, host
+*/
+
+.navbar-main,
+.contact {
+    background: #F88C00;
+    background: -webkit-linear-gradient(to left, #e88300, #F88C00);
+    background: linear-gradient(to left, #e88300, #F88C00);
+}
+
+.navbar-main .navbar-nav>li>a:hover,
+.navbar-main .navbar-nav>li>a:focus,
+.navbar-main .navbar-nav>.active>a,
+.navbar-main .navbar-nav>.active>a:hover,
+.navbar-main .navbar-nav>.active>a:focus,
+.navbar-main .navbar-nav>.open>a,
+.navbar-main .navbar-nav>.open>a:hover,
+.navbar-main .navbar-nav>.open>a:focus {
+    background-color: #e88300;
+}
+
+a.list-group-item.active,
+a.list-group-item.active:hover,
+a.list-group-item.active:focus {
+    background-color: #F88C00;
+}
+
+.pagination>.active>a,
+.pagination>.active>span,
+.pagination>.active>a:hover,
+.pagination>.active>span:hover,
+.pagination>.active>a:focus,
+.pagination>.active>span:focus {
+    background-color: #F88C00;
+    border-color: #F88C00;
+}
+
+.navbar-main .dropdown-menu>li>a:hover,
+.dropdown-menu>li>a:focus {
+    background-color: #F88C00;
+}
+
+.label-default {
+    background-color: #F88C00;
+}
+
+.list-group-item.active,
+.list-group-item.active:focus,
+.list-group-item.active:hover {
+    background-color: #F88C00;
+    border-color: #F88C00;
+}
+
+.icon-cog {
+    background: #F88C00;
+}

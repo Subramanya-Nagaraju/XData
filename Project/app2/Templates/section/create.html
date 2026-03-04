@@ -1,0 +1,211 @@
+{% load static %}
+<html>
+<head>
+	<title>Create Crane Entry</title>
+	<style>
+		.container {
+			padding: 20px;
+			max-width: 1100px;
+		}
+
+		h2 {
+			margin-bottom: 20px;
+		}
+
+		.message {
+			margin-bottom: 15px;
+			padding: 10px 12px;
+			border-radius: 5px;
+		}
+
+		.message.success {
+			background: #d4edda;
+			color: #155724;
+		}
+
+		.message.error {
+			background: #f8d7da;
+			color: #721c24;
+		}
+
+		.form-grid {
+			display: grid;
+			grid-template-columns: repeat(3, minmax(220px, 1fr));
+			gap: 14px;
+		}
+
+		.form-group {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+		}
+
+		.form-group label {
+			font-weight: 600;
+			font-size: 13px;
+		}
+
+		.form-group input,
+		.form-group select {
+			padding: 10px 12px;
+			border: 1px solid #ccc;
+			border-radius: 5px;
+			width: 100%;
+		}
+
+		.required {
+			color: #c00;
+		}
+
+		.actions {
+			margin-top: 18px;
+			display: flex;
+			gap: 10px;
+		}
+
+		.btn {
+			padding: 10px 16px;
+			background: black;
+			color: white;
+			text-decoration: none;
+			border-radius: 5px;
+			border: none;
+			cursor: pointer;
+		}
+
+		.btn:hover {
+			background: #333;
+			color: white;
+		}
+
+		@media (max-width: 900px) {
+			.form-grid {
+				grid-template-columns: 1fr;
+			}
+		}
+	</style>
+</head>
+<body>
+
+<div class="container">
+	<h2>Create Crane Entry</h2>
+
+	{% if messages %}
+		{% for message in messages %}
+			<div class="message {% if message.tags == 'success' %}success{% else %}error{% endif %}">
+				{{ message }}
+			</div>
+		{% endfor %}
+	{% endif %}
+
+	<form method="post">
+		{% csrf_token %}
+
+		<div class="form-grid">
+			<div class="form-group">
+				<label>Kran Typ <span class="required">*</span></label>
+				<input type="text" name="kran_typ" value="{{ form_data.kran_typ|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>Fabrik Nr <span class="required">*</span></label>
+				<input type="text" name="fabrik_nr" value="{{ form_data.fabrik_nr|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>Kunde <span class="required">*</span></label>
+				<input type="text" name="kunde" value="{{ form_data.kunde|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>LG <span class="required">*</span></label>
+				<select name="lg" required>
+					<option value="">Select</option>
+					<option value="DE" {% if form_data.lg == 'DE' %}selected{% endif %}>DE</option>
+					<option value="LE" {% if form_data.lg == 'LE' %}selected{% endif %}>LE</option>
+				</select>
+			</div>
+
+			<div class="form-group">
+				<label>Kundenummer</label>
+				<input type="text" name="kundenummer" value="{{ form_data.kundenummer|default:'' }}">
+			</div>
+
+			<div class="form-group">
+				<label>Version <span class="required">*</span></label>
+				<input type="text" name="version" value="{{ form_data.version|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>Serien Nr <span class="required">*</span></label>
+				<input type="text" name="serien_nr" value="{{ form_data.serien_nr|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>Tel Nr <span class="required">*</span></label>
+				<input type="text" name="tel_nr" value="{{ form_data.tel_nr|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>IP <span class="required">*</span></label>
+				<input type="text" name="ip" value="{{ form_data.ip|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>Rueckmeldung <span class="required">*</span></label>
+				<input type="text" name="rueckmeldung" value="{{ form_data.rueckmeldung|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>IT Nr <span class="required">*</span></label>
+				<input type="text" name="it_nr" value="{{ form_data.it_nr|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>Kundenkran <span class="required">*</span></label>
+				<select name="kundenkran" required>
+					<option value="">Select</option>
+					<option value="Kundenkran" {% if form_data.kundenkran == 'Kundenkran' %}selected{% endif %}>Kundenkran</option>
+					<option value="Mietkran" {% if form_data.kundenkran == 'Mietkran' %}selected{% endif %}>Mietkran</option>
+				</select>
+			</div>
+
+			<div class="form-group">
+				<label>Lizenz Ja <span class="required">*</span></label>
+				<select name="lizenz_ja" required>
+					<option value="">Select</option>
+					<option value="JA" {% if form_data.lizenz_ja == 'JA' %}selected{% endif %}>JA</option>
+					<option value="NA" {% if form_data.lizenz_ja == 'NA' %}selected{% endif %}>NA</option>
+				</select>
+			</div>
+
+			<div class="form-group">
+				<label>Lizenzdatum (YYYY-MM-DD) <span class="required">*</span></label>
+				<input type="text" name="lizenzdatum" value="{{ form_data.lizenzdatum|default:'' }}" placeholder="YYYY-MM-DD" required>
+			</div>
+
+			<div class="form-group">
+				<label>Bezahlt bis Rg.erstellt (YYYY-MM-DD) <span class="required">*</span></label>
+				<input type="text" name="bezahlt_bis_rg_erstellt" value="{{ form_data.bezahlt_bis_rg_erstellt|default:'' }}" placeholder="YYYY-MM-DD" required>
+			</div>
+
+			<div class="form-group">
+				<label>Service <span class="required">*</span></label>
+				<input type="number" name="servicemeldung" value="{{ form_data.servicemeldung|default:'' }}" required>
+			</div>
+
+			<div class="form-group">
+				<label>Amount</label>
+				<input type="number" name="amount" value="{{ form_data.amount|default:'' }}">
+			</div>
+		</div>
+
+		<div class="actions">
+			<button type="submit" class="btn">Create Entry</button>
+			<a href="{% url 'analyst_dashboard' %}" class="btn">Back to Data</a>
+		</div>
+	</form>
+</div>
+
+</body>
+</html>

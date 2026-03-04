@@ -1,0 +1,68 @@
+/*
+Theme Name: X-DATA
+Theme URI: http://www.whmcsdes.com
+Description: X-DATA Template
+Version: 1.6
+Author: WHMCSdes
+Author URI: http://whmcsdes.com
+Tags: powerful, host
+*/
+
+.navbar-main {
+    background: #e30613;
+    background: -webkit-linear-gradient(to left, #e30613, #e30613);
+    background: linear-gradient(to left, #e30613, #e30613);
+}
+
+.contact {
+    background: #e30613;
+    background: -webkit-linear-gradient(to left, #e30613, #e30613);
+    background: linear-gradient(to left, #e30613, #e30613);
+}
+
+.navbar-main .navbar-nav>li>a:hover,
+.navbar-main .navbar-nav>li>a:focus,
+.navbar-main .navbar-nav>.active>a,
+.navbar-main .navbar-nav>.active>a:hover,
+.navbar-main .navbar-nav>.active>a:focus,
+.navbar-main .navbar-nav>.open>a,
+.navbar-main .navbar-nav>.open>a:hover,
+.navbar-main .navbar-nav>.open>a:focus {
+    background-color: #e30613;
+}
+
+a.list-group-item.active,
+a.list-group-item.active:hover,
+a.list-group-item.active:focus {
+    background-color: #e30613;
+}
+
+.pagination>.active>a,
+.pagination>.active>span,
+.pagination>.active>a:hover,
+.pagination>.active>span:hover,
+.pagination>.active>a:focus,
+.pagination>.active>span:focus {
+    background-color: #e30613;
+    border-color: #e30613;
+}
+
+.navbar-main .dropdown-menu>li>a:hover,
+.dropdown-menu>li>a:focus {
+    background-color: #e30613;
+}
+
+.label-default {
+    background-color: #e30613;
+}
+
+.list-group-item.active,
+.list-group-item.active:focus,
+.list-group-item.active:hover {
+    background-color: #e30613;
+    border-color: #e30613;
+}
+
+.icon-cog {
+    background: #e30613;
+}
