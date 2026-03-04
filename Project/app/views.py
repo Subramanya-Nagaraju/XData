@@ -14,7 +14,6 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.cache import never_cache
 from django.http import Http404
-from .models import DepartmentData
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from dateutil.relativedelta import relativedelta
 from .models import Crane, CraneDueTracking

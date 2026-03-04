@@ -38,13 +38,3 @@ class CraneDueTracking(models.Model):
     def __str__(self):
         return f"Due tracking for Crane {self.crane_id}"
     
-from django.db import models
-
-class DepartmentData(models.Model):
-    department = models.CharField(max_length=50)
-    title = models.CharField(max_length=100)
-    description = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.department} - {self.title}"
