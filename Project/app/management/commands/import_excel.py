@@ -63,17 +63,27 @@ class Command(BaseCommand):
         return str(value)
 
     def clean_date(self, value):
-        """Convert Excel date -> 'YYYY-MM-DD', fallback to string."""
+        """Convert supported date values to 'YYYY-MM-DD'."""
         if isinstance(value, datetime):
             return value.strftime("%Y-%m-%d")
         if value is None:
             return ""
-        # If it's already a string like '2014-02-17'
-        try:
-            parsed = datetime.strptime(str(value), "%Y-%m-%d")
-            return parsed.strftime("%Y-%m-%d")
-        except:
-            return str(value)
+
+        raw_value = str(value).strip()
+        if not raw_value:
+            return ""
+
+        date_part = raw_value.replace("T", " ").split()[0]
+        normalized = date_part.replace("/", "-").replace(".", "-")
+
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
+            try:
+                parsed = datetime.strptime(normalized, fmt)
+                return parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        return raw_value
 
     def clean_int(self, value):
         """Convert anything to safe integer."""

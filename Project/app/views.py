@@ -26,11 +26,26 @@ def _parse_iso_date(value):
     if not value:
         return None
 
-    try:
-        year_str, month_str, day_str = str(value).strip().split('-')
-        return date(int(year_str), int(month_str), int(day_str))
-    except (ValueError, TypeError, AttributeError):
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    value_str = str(value).strip()
+    if not value_str:
         return None
+
+    date_part = value_str.replace("T", " ").split()[0]
+    normalized = date_part.replace("/", "-").replace(".", "-")
+
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(normalized, fmt).date()
+        except ValueError:
+            continue
+
+    return None
 
 
 def _due_years_for_crane(crane):
@@ -160,8 +175,6 @@ def login(request):
 @login_required(login_url='login')
 @never_cache
 def index(request):
-    data = DepartmentData.objects.all()
-
     return render(request, "index.html", {
         "group": "All Users",
         "data": data
