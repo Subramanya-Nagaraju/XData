@@ -827,3 +827,52 @@ div#orderSummary {
     color: #7e7e7e;
     font-size: 13px;
 }
+
+/* ================= CAROUSEL ANIMATION FIX ================= */
+.carousel-item {
+    transition: opacity 0.6s ease-in-out, transform 0.6s ease-in-out;
+}
+
+.carousel-item.active {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.carousel-item.carousel-item-next,
+.carousel-item.carousel-item-prev {
+    opacity: 0;
+}
+
+.carousel-item.carousel-item-next {
+    transform: translateX(100%);
+}
+
+.carousel-item.carousel-item-prev {
+    transform: translateX(-100%);
+}
+
+/* Ensure carousel indicators are visible */
+.carousel-indicators {
+    opacity: 0.8;
+}
+
+.carousel-indicators button {
+    background-color: rgba(0, 0, 0, 0.5);
+    transition: background-color 0.3s ease;
+}
+
+.carousel-indicators button.active {
+    background-color: rgba(0, 0, 0, 0.9);
+}
+
+/* Carousel controls */
+.carousel-control-prev,
+.carousel-control-next {
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+.carousel-control-prev:hover,
+.carousel-control-next:hover {
+    opacity: 1;
+}

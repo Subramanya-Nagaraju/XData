@@ -66,3 +66,15 @@ a.list-group-item.active:focus {
 .icon-cog {
     background: #e30613;
 }
+
+#main-menu .navbar {
+    background-color: #ffffff !important;
+}
+
+#main-menu .nav-link {
+    color: #000 !important;
+}
+
+#main-menu .nav-link:hover {
+    color: red !important;
+}

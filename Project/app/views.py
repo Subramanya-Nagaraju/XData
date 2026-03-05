@@ -141,6 +141,57 @@ def _matches_due_filter(crane, year, month_num, day_num):
     return True
 
 
+def _paid_due_dates_for_crane(crane):
+    """Return historical paid due dates for a crane (one entry per paid year)."""
+    start_date = _parse_iso_date(crane.lizenzdatum)
+    expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+
+    if not start_date or not expiry_date or start_date >= expiry_date:
+        return []
+
+    current_due = _current_due_date_for_crane(crane)
+    if current_due:
+        last_paid_due = current_due + relativedelta(years=-1)
+    else:
+        # Fully paid contracts have dues paid up to the year before expiry boundary.
+        last_paid_due = expiry_date + relativedelta(years=-1)
+
+    if last_paid_due < start_date:
+        return []
+
+    paid_dates = []
+    cursor = start_date
+    while cursor <= last_paid_due:
+        paid_dates.append(cursor)
+        cursor = cursor + relativedelta(years=1)
+
+    return paid_dates
+
+
+def _paid_years_for_crane(crane):
+    return [due_date.year for due_date in _paid_due_dates_for_crane(crane)]
+
+
+def _matches_paid_filter(crane, year, month_num, day_num):
+    paid_dates = _paid_due_dates_for_crane(crane)
+    if not paid_dates:
+        return False
+
+    for paid_date in paid_dates:
+        if year and year.isdigit() and len(year) == 4 and int(year) != paid_date.year:
+            continue
+
+        if month_num and paid_date.month != month_num:
+            continue
+
+        if day_num and paid_date.day != day_num:
+            continue
+
+        return True
+
+    return False
+
+
 def _sort_value(crane, sort_by):
     value = getattr(crane, sort_by, None)
 
@@ -151,6 +202,144 @@ def _sort_value(crane, sort_by):
         return value
 
     return str(value).lower()
+
+
+def _get_due_filtered_queryset(request):
+    year = request.GET.get('year', '').strip()
+    month = request.GET.get('month', '').strip()
+    day = request.GET.get('day', '').strip()
+
+    month_num = None
+    day_num = None
+
+    if month.isdigit():
+        month_num = int(month)
+        if not 1 <= month_num <= 12:
+            month_num = None
+
+    if day.isdigit():
+        day_num = int(day)
+        if not 1 <= day_num <= 31:
+            day_num = None
+
+    queryset = list(Crane.objects.filter(is_active=True).select_related('due_status'))
+    queryset = [
+        crane for crane in queryset
+        if _matches_due_filter(crane, year, month_num, day_num)
+    ]
+
+    sort_by = request.GET.get('sort', 'id')
+    order = request.GET.get('order', 'asc')
+
+    allowed_sorts = [
+        'id', 'kran_typ', 'fabrik_nr', 'kunde', 'lg', 'kundenummer',
+        'version', 'serien_nr', 'tel_nr', 'ip', 'rueckmeldung', 'it_nr',
+        'kundenkran', 'lizenz_ja', 'lizenzdatum', 'bezahlt_bis_rg_erstellt',
+        'servicemeldung', 'amount', 'is_active'
+    ]
+    if sort_by not in allowed_sorts:
+        sort_by = 'id'
+
+    queryset.sort(key=lambda crane: crane.id)
+    queryset.sort(
+        key=lambda crane: _sort_value(crane, sort_by),
+        reverse=(order == 'desc')
+    )
+
+    return queryset, year, month, day, sort_by, order
+
+
+def _get_paid_filtered_queryset(request):
+    year = request.GET.get('year', '').strip()
+    month = request.GET.get('month', '').strip()
+    day = request.GET.get('day', '').strip()
+
+    month_num = None
+    day_num = None
+
+    if month.isdigit():
+        month_num = int(month)
+        if not 1 <= month_num <= 12:
+            month_num = None
+
+    if day.isdigit():
+        day_num = int(day)
+        if not 1 <= day_num <= 31:
+            day_num = None
+
+    queryset = list(Crane.objects.filter(is_active=True).select_related('due_status'))
+    queryset = [
+        crane for crane in queryset
+        if _matches_paid_filter(crane, year, month_num, day_num)
+    ]
+
+    sort_by = request.GET.get('sort', 'id')
+    order = request.GET.get('order', 'asc')
+
+    allowed_sorts = [
+        'id', 'kran_typ', 'fabrik_nr', 'kunde', 'lg', 'kundenummer',
+        'version', 'serien_nr', 'tel_nr', 'ip', 'rueckmeldung', 'it_nr',
+        'kundenkran', 'lizenz_ja', 'lizenzdatum', 'bezahlt_bis_rg_erstellt',
+        'servicemeldung', 'amount', 'is_active'
+    ]
+    if sort_by not in allowed_sorts:
+        sort_by = 'id'
+
+    queryset.sort(key=lambda crane: crane.id)
+    queryset.sort(
+        key=lambda crane: _sort_value(crane, sort_by),
+        reverse=(order == 'desc')
+    )
+
+    return queryset, year, month, day, sort_by, order
+
+
+def _build_due_filter_context(page_obj, year, month, day, sort_by, order):
+    active_cranes = Crane.objects.filter(is_active=True).select_related('due_status')
+    years = sorted(
+        {
+            str(due_year)
+            for crane in active_cranes
+            for due_year in _due_years_for_crane(crane)
+        },
+        reverse=True
+    )
+
+    return {
+        'page_obj': page_obj,
+        'years': years,
+        'months': list(range(1, 13)),
+        'days': list(range(1, 32)),
+        'selected_year': year,
+        'selected_month': month,
+        'selected_day': day,
+        'sort_by': sort_by,
+        'order': order,
+    }
+
+
+def _build_paid_filter_context(page_obj, year, month, day, sort_by, order):
+    active_cranes = Crane.objects.filter(is_active=True).select_related('due_status')
+    years = sorted(
+        {
+            str(paid_year)
+            for crane in active_cranes
+            for paid_year in _paid_years_for_crane(crane)
+        },
+        reverse=True
+    )
+
+    return {
+        'page_obj': page_obj,
+        'years': years,
+        'months': list(range(1, 13)),
+        'days': list(range(1, 32)),
+        'selected_year': year,
+        'selected_month': month,
+        'selected_day': day,
+        'sort_by': sort_by,
+        'order': order,
+    }
 
 @csrf_protect
 @ensure_csrf_cookie
@@ -177,7 +366,6 @@ def login(request):
 def index(request):
     return render(request, "index.html", {
         "group": "All Users",
-        "data": data
     })
 
 @login_required(login_url='login')
@@ -232,8 +420,6 @@ def logout_view(request):
 def custom_404(request, exception):
     return render(request, '404.html', status=404)
 
-handler404 = 'project_name.urls.custom_404'
-
 @login_required
 def clear_entry(request, pk):
     kran = get_object_or_404(Crane, pk=pk)
@@ -259,7 +445,7 @@ def toggle_status(request, pk):
 @login_required(login_url='login')
 @never_cache
 def search_rg(request):
-    """Search cranes by computed due years between Lizenzdatum and Bezahlt bis Rg.erstellt."""
+    """Search cranes by computed due years and mark selected due as paid."""
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
         crane_id = request.POST.get('crane_id', '').strip()
@@ -305,6 +491,47 @@ def search_rg(request):
                 )
             return redirect(redirect_url)
 
+    queryset, year, month, day, sort_by, order = _get_due_filtered_queryset(request)
+
+    if request.GET.get('export') == 'true':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="crane_rg_due_search.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['ID', 'Kran Typ', 'Fabrik Nr', 'Kunde', 'LG', 'Kundenummer', 
+                        'Version', 'Serien Nr', 'Tel Nr', 'IP', 'Rueckmeldung', 'IT Nr',
+                        'Kundenkran', 'Lizenz Ja', 'Lizenzdatum', 'Bezahlt bis Rg.erstellt',
+                        'Servicemeldung', 'Amount', 'Status'])
+        
+        for crane in queryset:
+            writer.writerow([
+                crane.id, crane.kran_typ, crane.fabrik_nr, crane.kunde,
+                crane.lg, crane.kundenummer, crane.version, crane.serien_nr,
+                crane.tel_nr, crane.ip, crane.rueckmeldung,
+                crane.it_nr, crane.kundenkran, crane.lizenz_ja,
+                crane.lizenzdatum, crane.bezahlt_bis_rg_erstellt, crane.servicemeldung,
+                crane.amount,
+                'Active' if crane.is_active else 'Inactive'
+            ])
+        
+        return response
+
+    paginator = Paginator(queryset, 10)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    context = _build_due_filter_context(page_obj, year, month, day, sort_by, order)
+    return render(request, 'search_retrival.html', context)
+
+
+@login_required(login_url='login')
+@never_cache
+def search_paid(request):
+    """Search cranes by paid history years and mark selected entry as unpaid."""
+    if request.method == 'POST':
+        action = request.POST.get('action', '').strip()
+        crane_id = request.POST.get('crane_id', '').strip()
+        redirect_url = request.POST.get('next') or '/search_paid/'
+
         if action == 'not_paid':
             if not crane_id.isdigit():
                 messages.error(request, 'Invalid row selected.')
@@ -330,62 +557,18 @@ def search_rg(request):
             )
             return redirect(redirect_url)
 
-    # Date filter params
-    year = request.GET.get('year', '').strip()
-    month = request.GET.get('month', '').strip()
-    day = request.GET.get('day', '').strip()
-    
-    queryset = list(Crane.objects.filter(is_active=True).select_related('due_status'))
+    queryset, year, month, day, sort_by, order = _get_paid_filtered_queryset(request)
 
-    month_num = None
-    day_num = None
-
-    if month.isdigit():
-        month_num = int(month)
-        if not 1 <= month_num <= 12:
-            month_num = None
-
-    if day.isdigit():
-        day_num = int(day)
-        if not 1 <= day_num <= 31:
-            day_num = None
-
-    queryset = [
-        crane for crane in queryset
-        if _matches_due_filter(crane, year, month_num, day_num)
-    ]
-    
-    # Sorting
-    # Keep default ordering consistent with data() so IDs appear uniform.
-    sort_by = request.GET.get('sort', 'id')
-    order = request.GET.get('order', 'asc')
-    
-    allowed_sorts = [
-        'id', 'kran_typ', 'fabrik_nr', 'kunde', 'lg', 'kundenummer',
-        'version', 'serien_nr', 'tel_nr', 'ip', 'rueckmeldung', 'it_nr',
-        'kundenkran', 'lizenz_ja', 'lizenzdatum', 'bezahlt_bis_rg_erstellt',
-        'servicemeldung', 'amount', 'is_active'
-    ]
-    if sort_by not in allowed_sorts:
-        sort_by = 'id'
-
-    queryset.sort(key=lambda crane: crane.id)
-    queryset.sort(
-        key=lambda crane: _sort_value(crane, sort_by),
-        reverse=(order == 'desc')
-    )
-    
-    # Export CSV
     if request.GET.get('export') == 'true':
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="crane_rg_search.csv"'
-        
+        response['Content-Disposition'] = 'attachment; filename="crane_rg_paid_search.csv"'
+
         writer = csv.writer(response)
-        writer.writerow(['ID', 'Kran Typ', 'Fabrik Nr', 'Kunde', 'LG', 'Kundenummer', 
+        writer.writerow(['ID', 'Kran Typ', 'Fabrik Nr', 'Kunde', 'LG', 'Kundenummer',
                         'Version', 'Serien Nr', 'Tel Nr', 'IP', 'Rueckmeldung', 'IT Nr',
                         'Kundenkran', 'Lizenz Ja', 'Lizenzdatum', 'Bezahlt bis Rg.erstellt',
                         'Servicemeldung', 'Amount', 'Status'])
-        
+
         for crane in queryset:
             writer.writerow([
                 crane.id, crane.kran_typ, crane.fabrik_nr, crane.kunde,
@@ -396,38 +579,14 @@ def search_rg(request):
                 crane.amount,
                 'Active' if crane.is_active else 'Inactive'
             ])
-        
+
         return response
-    
-    # Pagination
+
     paginator = Paginator(queryset, 10)
     page_obj = paginator.get_page(request.GET.get('page'))
-    
-    # Get unique years and months for dropdowns
-    active_cranes = Crane.objects.filter(is_active=True).select_related('due_status')
-    years = sorted(
-        {
-            str(due_year)
-            for crane in active_cranes
-            for due_year in _due_years_for_crane(crane)
-        },
-        reverse=True
-    )
-    
-    months = list(range(1, 13))
-    days = list(range(1, 32))
-    
-    return render(request, 'search_retrival.html', {
-        'page_obj': page_obj,
-        'years': years,
-        'months': months,
-        'days': days,
-        'selected_year': year,
-        'selected_month': month,
-        'selected_day': day,
-        'sort_by': sort_by,
-        'order': order
-    })
+
+    context = _build_paid_filter_context(page_obj, year, month, day, sort_by, order)
+    return render(request, 'search_paid_retrival.html', context)
 
 
 @login_required(login_url='login')

@@ -10,6 +10,7 @@ urlpatterns = [
     path('index/', app_views.index, name='index'),
     path('analyst_dashboard/', app_views.data, name='analyst_dashboard'),
     path('search_rg/', app_views.search_rg, name='search_rg'),
+    path('search_paid/', app_views.search_paid, name='search_paid'),
     path('update_rg/', app_views.update_rg, name='update_rg'),
     path('create_rg/', app_views.create_rg, name='create_rg'),
     path('toggle_status/<int:pk>/', app_views.toggle_status, name='toggle_status'),
@@ -18,6 +19,8 @@ urlpatterns = [
     path('404/', app_views.custom_404, name='custom_404'),
     path('clear/<int:pk>/', app_views.clear_entry, name='clear_entry'),
 ]
+
+handler404 = 'app.views.custom_404'
 
 # Serve static files in DEBUG mode
 if settings.DEBUG:

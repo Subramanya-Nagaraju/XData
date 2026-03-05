@@ -246,14 +246,14 @@
 
 <div class="container">
 
-<h2> Search Due</h2>
+<h2> Search Paid</h2>
 
 <!-- Date Filter Section -->
 <div class="filter-section">
     <form method="GET">
         <div class="filter-row">
             <div class="filter-group">
-                <label for="year">Due Year</label>
+                <label for="year">Paid Year</label>
                 <select name="year" id="year">
                     <option value="">All Years</option>
                     {% for y in years %}
@@ -350,9 +350,10 @@
                     {% csrf_token %}
                     <input type="hidden" name="crane_id" value="{{ kran.id }}">
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <button class="filter-btn" name="action" value="mark_paid" type="submit">Paid</button>
+                    <button class="filter-btn" name="action" value="not_paid" type="submit">Unpaid</button>
                 </form>
             </td>
+
         </tr>
         {% empty %}
         <tr>
