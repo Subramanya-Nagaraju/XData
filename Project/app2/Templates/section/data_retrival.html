@@ -19,6 +19,31 @@
             display: flex;
         }
 
+        .top-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .page-size-form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+        }
+
+        .page-size-form label {
+            font-size: 13px;
+            margin: 0;
+        }
+
+        .page-size-form select {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
+        }
+
         .search-box input {
             padding: 8px 12px;
             border: 1px solid #ccc;
@@ -165,13 +190,21 @@
                         btn.classList.remove('inactive');
                         btn.classList.add('active');
                         btn.textContent = 'Active';
+                        btn.title = '';
                         row.classList.remove('inactive');
                     } else {
                         btn.classList.remove('active');
                         btn.classList.add('inactive');
                         btn.textContent = 'Inactive';
+                        if (data.is_terminated) {
+                            btn.title = 'This client is terminated';
+                        } else {
+                            btn.title = '';
+                        }
                         row.classList.add('inactive');
                     }
+                } else if (data.error) {
+                    alert(data.error);
                 }
             })
             .catch(error => console.error('Error:', error));
@@ -182,11 +215,22 @@
 
 <div class="container">
 
-<h2>Crane Management Dashboard</h2>
+<h2>Crane Management</h2>
 
 <div class="top-bar">
     <div></div>
-    <a class="btn" href="?export=true">Export CSV</a>
+    <div class="top-actions">
+        <form method="get" class="page-size-form">
+            <label for="page_size">Rows</label>
+            <select id="page_size" name="page_size" onchange="this.form.submit()">
+                {% for size in page_size_options %}
+                <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn">Apply</button></noscript>
+        </form>
+        <a class="btn" href="?export=true&page_size={{ page_size }}">Export CSV</a>
+    </div>
 </div>
 
 <div class="table-wrapper">
@@ -238,6 +282,7 @@
             <td>
                 <button 
                     class="status-btn {% if kran.is_active %}active{% else %}inactive{% endif %}" 
+                    title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif not kran.is_active and kran.is_expired %}License is expired. Update the expiry date to activate.{% endif %}"
                     onclick="toggleStatus({{ kran.id }}, this)">
                     {% if kran.is_active %}Active{% else %}Inactive{% endif %}
                 </button>
@@ -255,15 +300,15 @@
 <!-- 📄 Pagination -->
 <div class="pagination">
     {% if page_obj.has_previous %}
-        <a href="?page=1">&laquo; First</a>
-        <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+        <a href="?page=1&page_size={{ page_size }}">&laquo; First</a>
+        <a href="?page={{ page_obj.previous_page_number }}&page_size={{ page_size }}">Previous</a>
     {% endif %}
 
     Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
 
     {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}">Next</a>
-        <a href="?page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
+        <a href="?page={{ page_obj.next_page_number }}&page_size={{ page_size }}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}&page_size={{ page_size }}">Last &raquo;</a>
     {% endif %}
 </div>
 

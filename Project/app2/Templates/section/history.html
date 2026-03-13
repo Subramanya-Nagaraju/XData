@@ -1,0 +1,160 @@
+{% load static %}
+<html>
+<head>
+    <title>Change History</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .container {
+            padding: 20px;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+            color: #222;
+            font-size: 28px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 1200px;
+        }
+
+        th, td {
+            padding: 12px 10px;
+            border: 1px solid #eee;
+            text-align: left;
+            white-space: nowrap;
+            font-size: 13px;
+            vertical-align: top;
+        }
+
+        th {
+            background: black;
+            color: white;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            text-align: center;
+        }
+
+        td.center {
+            text-align: center;
+        }
+
+        td.details {
+            white-space: normal;
+            min-width: 340px;
+            line-height: 1.4;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+
+        tbody tr:hover {
+            background: #f0f0f0;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .pagination a {
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid #ddd;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #222;
+        }
+
+        .pagination a:hover {
+            background: #333;
+            color: white;
+            border-color: #333;
+        }
+
+        .pagination-info {
+            padding: 8px 12px;
+            font-weight: 600;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Change History</h2>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Changed At</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Crane ID</th>
+                    <th>Kunde</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in page_obj %}
+                <tr>
+                    <td class="center">{{ item.changed_at|date:"Y-m-d H:i:s" }}</td>
+                    <td class="center">{% if item.changed_by %}{{ item.changed_by.username }}{% else %}System{% endif %}</td>
+                    <td class="center">{{ item.action }}</td>
+                    <td class="center">{{ item.crane_display_id|default:'-' }}</td>
+                    <td>{{ item.crane_kunde|default:'-' }}</td>
+                    <td class="details">{{ item.details|default:'-' }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="center">No history records yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="pagination">
+        {% if page_obj.has_previous %}
+            <a href="?page=1">&laquo; First</a>
+            <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+
+        <span class="pagination-info">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+        {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}">Next</a>
+            <a href="?page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
+        {% endif %}
+    </div>
+</div>
+
+</body>
+</html>

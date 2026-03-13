@@ -5,10 +5,18 @@
             <ul class="top-nav">
                 
                 <!-- Login/Account Notifications -->
-                            <li>
-                    <a href="{% url "login" %}"><i class="far fa-user customicon"></i></a>
+                {% if request.user.is_authenticated %}
+                <li>
+                    <a href="{% url 'logout' %}" title="Logout">
+                        <i class="far fa-user customicon"></i>
+                    </a>
                 </li>
-                                </ul>
+                {% else %}
+                <li>
+                    <a href="{% url 'login' %}" title="Login"><i class="far fa-user customicon"></i></a>
+                </li>
+                {% endif %}
+            </ul>
 
             <a class="logo" href=""><img src="{% static 'templates/xdata-wh/added_img/logo.svg' %}" alt="WOLFFKRAN" style="max-width: 150px; height: auto;"></a>
 
@@ -49,8 +57,14 @@
                     <li><a href="{% url 'search_paid' %}">Search Paid</a></li>
                     <li><a href="{% url 'update_rg' %}">Update</a></li>
                     <li><a href="{% url 'create_rg' %}">Create</a></li>
+                    <li><a href="{% url 'terminations_list' %}">Terminations</a></li>
                 </ul>
             </li>
+
+            <li menuitemname="History" class="" id="Primary_Navbar-History">
+                <a href="{% url 'history_list' %}">History</a>
+            </li>
+
         <li menuitemname="Contact Us" class="" id="Primary_Navbar-Contact_Us">
             <a href="">
                             Contact Us

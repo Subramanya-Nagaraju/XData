@@ -1,5 +1,17 @@
 {% load static %}
 <section class="col-md-12" id="main-body">
+    <div id="loginAlert" class="login-alert-popup{% if messages or logged_out %} show{% endif %}{% if logged_out and not messages %} success{% endif %}">
+        <button type="button" class="login-alert-close" onclick="closeLoginAlert()">&times;</button>
+        <div id="loginAlertMessage">
+            {% if logged_out %}
+                <div>You have been logged out successfully.</div>
+            {% endif %}
+            {% for message in messages %}
+                <div>{{ message }}</div>
+            {% endfor %}
+        </div>
+    </div>
+
     <div class="container">
         <div class="row">
             <div class="col-xs-12 main-content">
@@ -15,16 +27,7 @@
 
                     <div class="providerLinkingFeedback"></div>
 
-                    <!-- NEW FIXED CENTERED BOX -->
                     <div class="wdes-login-wrapper">
-                        {% if messages %}
-                            {% for message in messages %}
-                                <div style="color:red; text-align:center; margin-bottom:10px;">
-                                    {{ message }}
-                                </div>
-                            {% endfor %}
-                        {% endif %}
-
                         <form method="post" action="{% url 'login' %}" class="login-form" role="form">
                             {% csrf_token %}
 
@@ -41,7 +44,7 @@
                             <div class="text-center">
                                 <input id="login" type="submit" class="wdes-submit" value="Login"> 
                                 <br><br>
-                                <a href="#" onclick="alert('Please contact your administrator to reset your password.')" class="wdes-2nd-btn">Forgot Password?</a>
+                                <a href="#" onclick="showResetAlert(event)" class="wdes-2nd-btn">Forgot Password?</a>
                             </div>
                         </form>
 
@@ -55,19 +58,113 @@
 </section>
 
 
-<!-- Perfect Centering CSS -->
 <style>
+#main-body {
+    min-height: calc(100vh - 140px);
+}
+
+.login-alert-popup {
+    position: fixed;
+    top: 84px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-10px);
+    background: #ffffff;
+    border-left: 4px solid #c62828;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+    border-radius: 6px;
+    padding: 12px 42px 12px 14px;
+    min-width: 320px;
+    max-width: 520px;
+    z-index: 9999;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    color: #212121;
+}
+
+.login-alert-popup.success {
+    border-left-color: #2e7d32;
+}
+
+.login-alert-popup.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+
+.login-alert-close {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+}
+
 .wdes-login-wrapper {
     display: flex;
     justify-content: center;
-    align-items: flex-start;
-    margin-top: 10px;
+    align-items: center;
+    min-height: 58vh;
+    padding: 22px 0 38px;
 }
 
 .login-form {
-    width: 360px;
+    width: min(420px, 92vw);
     background: #ffffff;
-    padding: 20px 25px;
+    padding: 24px 28px;
     border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 576px) {
+    .login-alert-popup {
+        min-width: 280px;
+        max-width: calc(100vw - 24px);
+    }
 }
 </style>
+
+<script>
+    function closeLoginAlert() {
+        var popup = document.getElementById('loginAlert');
+        if (!popup) {
+            return;
+        }
+        popup.classList.remove('show');
+    }
+
+    function showLoginAlert(message, isSuccess) {
+        var popup = document.getElementById('loginAlert');
+        var messageBox = document.getElementById('loginAlertMessage');
+        if (!popup || !messageBox) {
+            return;
+        }
+
+        messageBox.innerHTML = '<div>' + message + '</div>';
+        popup.classList.toggle('success', !!isSuccess);
+        popup.classList.add('show');
+
+        window.setTimeout(closeLoginAlert, 5000);
+    }
+
+    function showResetAlert(event) {
+        event.preventDefault();
+        showLoginAlert('Please contact your administrator to reset your password.', false);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var popup = document.getElementById('loginAlert');
+        if (popup && popup.classList.contains('show')) {
+            window.setTimeout(closeLoginAlert, 5000);
+        }
+
+        window.addEventListener('pageshow', function (event) {
+            if (event.persisted) {
+                window.location.reload();
+            }
+        });
+    });
+</script>

@@ -146,7 +146,7 @@
         table {
             border-collapse: collapse;
             width: 100%;
-            min-width: 2800px;
+            min-width: 3000px;
         }
 
         th, td {
@@ -246,7 +246,7 @@
 
 <div class="container">
 
-<h2> Search Paid</h2>
+<h2> Search Paid "Bezahlt bis Rg.erstellt"</h2>
 
 <!-- Date Filter Section -->
 <div class="filter-section">
@@ -321,6 +321,7 @@
             <th>Bezahlt bis Rg.erstellt</th>
             <th>servicemeldung</th>
             <th>Amount</th>
+            <th>Payment Date</th>
             <th>Action</th>
         </tr>
     </thead>
@@ -346,6 +347,19 @@
             <td>{{ kran.servicemeldung }}</td>
             <td>{{ kran.amount }}</td>
             <td>
+                {% if kran.due_status and kran.due_status.actual_paid_date %}
+                    <strong>{{ kran.due_status.actual_paid_date }}</strong>
+                    {% if kran.due_status.last_paid_at %}
+                    <br>
+                    <small style="color:#888;" title="Timestamp when button was clicked">
+                        Recorded: {{ kran.due_status.last_paid_at|date:"Y-m-d" }} {{ kran.due_status.last_paid_at|time:"H:i:s" }}
+                    </small>
+                    {% endif %}
+                {% else %}
+                    <span style="color:#aaa;">—</span>
+                {% endif %}
+            </td>
+            <td>
                 <form method="post" style="display:flex; justify-content:center; gap:8px;">
                     {% csrf_token %}
                     <input type="hidden" name="crane_id" value="{{ kran.id }}">
@@ -357,7 +371,7 @@
         </tr>
         {% empty %}
         <tr>
-            <td colspan="20">No data found for the selected filters</td>
+            <td colspan="21">No data found for the selected filters</td>
         </tr>
         {% endfor %}
     </tbody>

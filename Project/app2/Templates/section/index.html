@@ -1,240 +1,564 @@
-{% load static %}
+<style>
+    .dash-shell {
+        background: #f2f3f5;
+        padding: 26px 0 42px;
+    }
 
+    .date-filter {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: flex-end;
+    }
 
-<!-- ================= NEWS SECTION ================= -->
-<section class="news-section" style="padding: 80px 0; background: #ffffff;">
+    .date-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .date-group label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: #666d73;
+        font-weight: 600;
+    }
+
+    .date-group input {
+        height: 34px;
+        border: 1px solid #d8d8d8;
+        border-radius: 6px;
+        padding: 6px 10px;
+        min-width: 155px;
+        font-size: 13px;
+    }
+
+    .btn-filter,
+    .btn-clear {
+        height: 34px;
+        border-radius: 6px;
+        padding: 0 12px;
+        font-size: 12px;
+        font-weight: 700;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-filter {
+        background: #c62828;
+        color: #fff;
+        border: 1px solid #c62828;
+    }
+
+    .btn-filter:hover {
+        background: #b71c1c;
+        border-color: #b71c1c;
+        color: #fff;
+    }
+
+    .btn-clear {
+        border: 1px solid #d7d7d7;
+        color: #32373c;
+        background: #fff;
+    }
+
+    .btn-clear:hover {
+        border-color: #c62828;
+        color: #c62828;
+        text-decoration: none;
+    }
+
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    .kpi-card {
+        background: #fff;
+        border: 1px solid #e3e3e3;
+        border-left: 4px solid #c62828;
+        border-radius: 8px;
+        padding: 12px 14px;
+        min-height: 98px;
+    }
+
+    .kpi-label {
+        margin: 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #72777d;
+        font-weight: 600;
+    }
+
+    .kpi-value {
+        margin: 6px 0 0;
+        font-size: 30px;
+        line-height: 1;
+        color: #1f2328;
+        font-weight: 700;
+    }
+
+    .kpi-trend {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .kpi-trend-bar {
+        height: 6px;
+        border-radius: 999px;
+        background: #eceff1;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .kpi-trend-fill {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+    }
+
+    .fill-gray { background: #9ea4aa; }
+    .fill-green { background: #2e7d32; }
+    .fill-orange { background: #ef6c00; }
+    .fill-red { background: #c62828; }
+
+    .kpi-trend-text {
+        min-width: 40px;
+        text-align: right;
+        font-size: 11px;
+        color: #66707a;
+        font-weight: 700;
+    }
+
+    .chart-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .chart-grid-wide {
+        grid-column: 1 / -1;
+    }
+
+    .panel {
+        background: #fff;
+        border: 1px solid #e2e2e2;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .panel-header {
+        background: #f7f7f7;
+        border-bottom: 1px solid #ececec;
+        padding: 10px 12px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #2b2f33;
+    }
+
+    .panel-body {
+        padding: 14px;
+    }
+
+    .chart-box {
+        position: relative;
+        height: 280px;
+    }
+
+    .chart-box.line-chart {
+        height: 320px;
+    }
+
+    .panel-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .dash-table-wrap {
+        overflow-x: auto;
+    }
+
+    .dash-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 560px;
+    }
+
+    .dash-table th,
+    .dash-table td {
+        padding: 9px 10px;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 12px;
+        color: #2f3337;
+        white-space: nowrap;
+        text-align: left;
+    }
+
+    .dash-table th {
+        background: #fafafa;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.4px;
+        color: #6f747a;
+    }
+
+    .dash-table .td-alert {
+        color: #b71c1c;
+        font-weight: 700;
+    }
+
+    .status-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 2px 9px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+    }
+
+    .chip-red {
+        background: #ffebee;
+        color: #b71c1c;
+        border: 1px solid #ef9a9a;
+    }
+
+    .chip-orange {
+        background: #fff3e0;
+        color: #e65100;
+        border: 1px solid #ffcc80;
+    }
+
+    .chip-green {
+        background: #e8f5e9;
+        color: #1b5e20;
+        border: 1px solid #a5d6a7;
+    }
+
+    .details-cell {
+        white-space: normal !important;
+        min-width: 280px;
+    }
+
+    @media (max-width: 991px) {
+        .chart-grid,
+        .panel-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .kpi-value {
+            font-size: 26px;
+        }
+    }
+</style>
+
+<section class="dash-shell">
     <div class="container">
-
-        <!-- Section Heading -->
-        <div class="text-center" style="margin-bottom: 50px;">
-            <h2 style="font-weight: 600;">WOLFFKRAN Up-To-Date</h2>
-            <p style="color: #666;">Discover the latest news about WOLFF cranes</p>
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <p class="kpi-label">Total Cranes</p>
+                <p class="kpi-value">{{ total_cranes }}</p>
+                <div class="kpi-trend">
+                    <div class="kpi-trend-bar"><span class="kpi-trend-fill fill-gray" style="width: {{ total_pct }}%;"></span></div>
+                    <span class="kpi-trend-text">{{ total_pct }}%</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <p class="kpi-label">Active</p>
+                <p class="kpi-value">{{ active_count }}</p>
+                <div class="kpi-trend">
+                    <div class="kpi-trend-bar"><span class="kpi-trend-fill fill-green" style="width: {{ active_pct }}%;"></span></div>
+                    <span class="kpi-trend-text">{{ active_pct }}%</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <p class="kpi-label">Inactive</p>
+                <p class="kpi-value">{{ inactive_count }}</p>
+                <div class="kpi-trend">
+                    <div class="kpi-trend-bar"><span class="kpi-trend-fill fill-orange" style="width: {{ inactive_pct }}%;"></span></div>
+                    <span class="kpi-trend-text">{{ inactive_pct }}%</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <p class="kpi-label">Terminated</p>
+                <p class="kpi-value">{{ terminated_count }}</p>
+                <div class="kpi-trend">
+                    <div class="kpi-trend-bar"><span class="kpi-trend-fill fill-red" style="width: {{ terminated_pct }}%;"></span></div>
+                    <span class="kpi-trend-text">{{ terminated_pct }}%</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <p class="kpi-label">Overdue Dues</p>
+                <p class="kpi-value">{{ overdue_count }}</p>
+                <div class="kpi-trend">
+                    <div class="kpi-trend-bar"><span class="kpi-trend-fill fill-red" style="width: {{ overdue_pct }}%;"></span></div>
+                    <span class="kpi-trend-text">{{ overdue_pct }}%</span>
+                </div>
+            </div>
+            <div class="kpi-card">
+                <p class="kpi-label">Expiring in 30 Days</p>
+                <p class="kpi-value">{{ expiring_soon_count }}</p>
+                <div class="kpi-trend">
+                    <div class="kpi-trend-bar"><span class="kpi-trend-fill fill-orange" style="width: {{ expiring_pct }}%;"></span></div>
+                    <span class="kpi-trend-text">{{ expiring_pct }}%</span>
+                </div>
+            </div>
         </div>
 
-        <div class="row">
-
-            <!-- News Card 1 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none;">
-                    <img src="{% static 'templates/xdata-wh/added_img/image.jpg' %}" class="img-fluid" alt="news">
-                    <div class="card-body">
-                        <h5>
-                            WOLFF on a Narrow Ridge: Complete Solution for the Complex Rehabilitation
-                        </h5>
-
-                        <small style="color: gray;">
-                            <i class="fa fa-calendar"></i> 05.02.2026 | Press Release
-                        </small>
-
-                        <p style="margin-top: 15px;">
-                            WOLFF 7534.16 Clear mounted on a City Portal supports rehabilitation of the historic dam in France.
-                        </p>
-
-                        <a href="#" class="btn btn-danger btn-sm">Learn more</a>
-                    </div>
+        <div class="chart-grid">
+            <div class="panel">
+                <div class="panel-header">Status Distribution</div>
+                <div class="panel-body">
+                    <div class="chart-box"><canvas id="statusChart"></canvas></div>
                 </div>
             </div>
 
-            <!-- News Card 2 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none;">
-                    <img src="{% static 'templates/xdata-wh/added_img/image1.jpg' %}" class="img-fluid" alt="news">
-                    <div class="card-body">
-                        <h5>
-                            WOLFFKRAN showcases lifting solutions at HEC Forum & Expo 2026
-                        </h5>
-
-                        <small style="color: gray;">
-                            <i class="fa fa-calendar"></i> 28.01.2026 | News
-                        </small>
-
-                        <p style="margin-top: 15px;">
-                            WOLFFKRAN will present lifting solutions and smart assistance technology at the HEC Forum.
-                        </p>
-
-                        <a href="#" class="btn btn-danger btn-sm">Learn more</a>
-                    </div>
+            <div class="panel">
+                <div class="panel-header">Overdue Aging</div>
+                <div class="panel-body">
+                    <div class="chart-box"><canvas id="overdueAgingChart"></canvas></div>
                 </div>
             </div>
 
-            <!-- News Card 3 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none;">
-                    <img src="{% static 'templates/xdata-wh/added_img/image2.jpeg' %}" class="img-fluid" alt="news">
-                    <div class="card-body">
-                        <h5>
-                            WOLFFKRAN and WOLFFY Join Cherry Picker Pete
-                        </h5>
-
-                        <small style="color: gray;">
-                            <i class="fa fa-calendar"></i> 11.11.2025 | News
-                        </small>
-
-                        <p style="margin-top: 15px;">
-                            Join Pete and friends in a thrilling safety-first adventure introducing children to lifting machines.
-                        </p>
-
-                        <a href="#" class="btn btn-danger btn-sm">Learn more</a>
-                    </div>
+            <div class="panel">
+                <div class="panel-header">Expiry Window</div>
+                <div class="panel-body">
+                    <div class="chart-box"><canvas id="expiryWindowChart"></canvas></div>
                 </div>
             </div>
 
+            <div class="panel">
+                <div class="panel-header">Top Kunden by Crane Count</div>
+                <div class="panel-body">
+                    <div class="chart-box"><canvas id="customerChart"></canvas></div>
+                </div>
+            </div>
+
+            <div class="panel chart-grid-wide">
+                <div class="panel-header">Change Activity Trend</div>
+                <div class="panel-body">
+                    <div class="chart-box line-chart"><canvas id="changeActivityChart"></canvas></div>
+                </div>
+            </div>
         </div>
+
+        <div class="panel-grid">
+            <div class="panel">
+                <div class="panel-header">Overdue Due Dates</div>
+                <div class="panel-body dash-table-wrap">
+                    <table class="dash-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Kunde</th>
+                                <th>Serien Nr</th>
+                                <th>Due Date</th>
+                                <th>Days Overdue</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in overdue_rows %}
+                            <tr>
+                                <td>{{ row.id }}</td>
+                                <td>{{ row.kunde }}</td>
+                                <td>{{ row.serien_nr }}</td>
+                                <td>{{ row.current_due|date:"Y-m-d" }}</td>
+                                <td class="td-alert">{{ row.days_overdue }}</td>
+                                <td><span class="status-chip chip-red">Overdue</span></td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6">No overdue due dates in selected range.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">Expiring in Next 30 Days</div>
+                <div class="panel-body dash-table-wrap">
+                    <table class="dash-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Kunde</th>
+                                <th>Serien Nr</th>
+                                <th>Expiry</th>
+                                <th>Days Left</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in expiring_rows %}
+                            <tr>
+                                <td>{{ row.id }}</td>
+                                <td>{{ row.kunde }}</td>
+                                <td>{{ row.serien_nr }}</td>
+                                <td>{{ row.expiry_date|date:"Y-m-d" }}</td>
+                                <td>{% if row.days_left == 0 %}Today{% else %}{{ row.days_left }}{% endif %}</td>
+                                <td>
+                                    {% if row.days_left <= 7 %}
+                                    <span class="status-chip chip-orange">Critical</span>
+                                    {% else %}
+                                    <span class="status-chip chip-green">Upcoming</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6">No expiring contracts in selected range.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
     </div>
 </section>
-<!-- ================= PROJECT NEWS SECTION ================= -->
-<section style="padding: 70px 0; background: #ffffff;">
-    <div class="container">
-        <div class="row">
 
-            <!-- Card 1 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none; background: transparent;">
-                    <img src="{% static 'templates/xdata-wh/added_img/image3.jpg' %}" class="img-fluid" alt="project">
-                    
-                    <div class="card-body px-0">
-                        <h4 style="font-weight: 500;">
-                            Two WOLFF cranes are building a new religious landmark in Riyadh
-                        </h4>
+{{ status_chart|json_script:"status-chart-data" }}
+{{ overdue_aging_chart|json_script:"overdue-aging-chart-data" }}
+{{ expiry_window_chart|json_script:"expiry-window-chart-data" }}
+{{ change_activity_chart|json_script:"change-activity-chart-data" }}
+{{ customer_chart|json_script:"customer-chart-data" }}
 
-                        <small style="color: #666;">
-                            <i class="fa fa-calendar"></i> 10.11.2025 | Press Release
-                        </small>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    (function () {
+        if (typeof Chart === 'undefined') {
+            return;
+        }
 
-                        <p style="margin-top: 15px;">
-                            In the heart of Riyadh, along King Abdullah Road, the modern Sheikh Saleh Al-Rajhi Mosque is taking shape – a new center for faith and community. Two WOLFF cranes have been supporting this construction project since March 2025.
-                        </p>
+        const statusData = JSON.parse(document.getElementById('status-chart-data').textContent);
+        const overdueData = JSON.parse(document.getElementById('overdue-aging-chart-data').textContent);
+        const expiryData = JSON.parse(document.getElementById('expiry-window-chart-data').textContent);
+        const activityData = JSON.parse(document.getElementById('change-activity-chart-data').textContent);
+        const customerData = JSON.parse(document.getElementById('customer-chart-data').textContent);
 
-                        <a href="#" class="btn btn-danger" style="padding: 8px 20px;">Learn more</a>
-                    </div>
-                </div>
-            </div>
+        const chartDefaults = {
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#4b5560',
+                        boxWidth: 12,
+                        font: { size: 11 }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#5c6670', font: { size: 11 } },
+                    grid: { color: '#edf0f2' }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: '#5c6670', font: { size: 11 }, precision: 0 },
+                    grid: { color: '#edf0f2' }
+                }
+            }
+        };
 
-            <!-- Card 2 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none; background: transparent;">
-                    <img src="{% static 'templates/xdata-wh/added_img/image4.jpg' %}" class="img-fluid" alt="project">
-                    
-                    <div class="card-body px-0">
-                        <h4 style="font-weight: 500;">
-                            Three WOLFF Cranes Support Spectacular Aurach Valley Bridge Project
-                        </h4>
+        new Chart(document.getElementById('statusChart'), {
+            type: 'doughnut',
+            data: {
+                labels: statusData.labels,
+                datasets: [{
+                    data: statusData.values,
+                    backgroundColor: ['#2e7d32', '#ef6c00', '#c62828'],
+                    borderColor: '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#4b5560', boxWidth: 12, font: { size: 11 } } }
+                }
+            }
+        });
 
-                        <small style="color: #666;">
-                            <i class="fa fa-calendar"></i> 30.09.2025 | Press Release
-                        </small>
+        new Chart(document.getElementById('overdueAgingChart'), {
+            type: 'bar',
+            data: {
+                labels: overdueData.labels,
+                datasets: [{
+                    label: 'Rows',
+                    data: overdueData.values,
+                    backgroundColor: ['#ffcdd2', '#ef9a9a', '#c62828'],
+                    borderRadius: 4,
+                    borderSkipped: false
+                }]
+            },
+            options: Object.assign({ maintainAspectRatio: false, plugins: { legend: { display: false } } }, chartDefaults)
+        });
 
-                        <p style="margin-top: 15px;">
-                            Impressive trio: The WOLFF cranes lifted loads of up to 13 tons during the demolition of the old bridge as well as the construction of the new superstructures and piers.
-                        </p>
+        new Chart(document.getElementById('expiryWindowChart'), {
+            type: 'bar',
+            data: {
+                labels: expiryData.labels,
+                datasets: [{
+                    label: 'Contracts',
+                    data: expiryData.values,
+                    backgroundColor: ['#ffcc80', '#ffb74d', '#81c784'],
+                    borderRadius: 4,
+                    borderSkipped: false
+                }]
+            },
+            options: Object.assign({ maintainAspectRatio: false, plugins: { legend: { display: false } } }, chartDefaults)
+        });
 
-                        <a href="#" class="btn btn-danger" style="padding: 8px 20px;">Learn more</a>
-                    </div>
-                </div>
-            </div>
+        new Chart(document.getElementById('customerChart'), {
+            type: 'bar',
+            data: {
+                labels: customerData.labels,
+                datasets: [{
+                    label: 'Cranes',
+                    data: customerData.values,
+                    backgroundColor: '#c62828',
+                    borderRadius: 4,
+                    borderSkipped: false
+                }]
+            },
+            options: Object.assign({
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } }
+            }, chartDefaults)
+        });
 
-            <!-- Card 3 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none; background: transparent;">
-                    <img src="{% static 'templates/xdata-wh/added_img/image5.jpg' %}" class="img-fluid" alt="project">
-                    
-                    <div class="card-body px-0">
-                        <h4 style="font-weight: 500;">
-                            WOLFFs at the Tegernsee: WOLFFKRAN supports construction of Seegut
-                        </h4>
-
-                        <small style="color: #666;">
-                            <i class="fa fa-calendar"></i> 25.09.2025 | Press Release
-                        </small>
-
-                        <p style="margin-top: 15px;">
-                            On the shores of Lake Tegernsee, three WOLFFs are helping bring one of Germany’s most ambitious tourism projects to life.
-                        </p>
-
-                        <a href="#" class="btn btn-danger" style="padding: 8px 20px;">Learn more</a>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-    </div>
-</section>
-<!-- ================= FEATURE SECTION ================= -->
-<section style="background-color: #f2f2f2; padding: 80px 0;">
-    <div class="container">
-        <div class="row">
-
-            <!-- Card 1 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none; background: transparent;">
-                    
-                    <img src="{% static 'templates/xdata-wh/added_img/image6.jpg' %}" class="img-fluid" alt="New WOLFF cranes">
-
-                    <div class="card-body px-0">
-                        <h4 style="font-weight: 500;">
-                            New WOLFF cranes
-                        </h4>
-
-                        <p style="margin-top: 15px; color: #555;">
-                            A crane is a crane, but only a WOLFF crane is an entire system of endless possibilities for lifting and moving. WOLFFKRAN currently offers 22 saddle jib and luffing jib cranes in more than 30 versions. Combined with the modular WOLFF tower system and crane bases, this results in highly cost-effective solutions from S to XXL.
-                        </p>
-
-                        <a href="#" class="btn btn-danger" style="padding: 8px 22px;">
-                            Learn more
-                        </a>
-                    </div>
-
-                </div>
-            </div>
-
-
-            <!-- Card 2 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none; background: transparent;">
-                    
-                    <img src="{% static 'templates/xdata-wh/added_img/image7.jpg' %}" class="img-fluid" alt="WOLFF Rental Fleet">
-
-                    <div class="card-body px-0">
-                        <h4 style="font-weight: 500;">
-                            WOLFF Rental Fleet
-                        </h4>
-
-                        <p style="margin-top: 15px; color: #555;">
-                            Buy or rent your WOLFF crane directly from the manufacturer. With a rental fleet of approx. 700 cranes, WOLFFKRAN is one of the largest rental companies of tower cranes in the world.
-                        </p>
-
-                        <a href="#" class="btn btn-danger" style="padding: 8px 22px;">
-                            Learn more
-                        </a>
-                    </div>
-
-                </div>
-            </div>
-
-
-            <!-- Card 3 -->
-            <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card" style="border: none; background: transparent;">
-                    
-                    <img src="{% static 'templates/xdata-wh/added_img/image8.png' %}" class="img-fluid" alt="Career with perspectives">
-
-                    <div class="card-body px-0">
-                        <h4 style="font-weight: 500;">
-                            Career with perspectives
-                        </h4>
-
-                        <p style="margin-top: 15px; color: #555;">
-                            WOLFFKRAN is a dynamically growing company. We need reinforcements – we are looking for motivated and competent people who support, promote and further strengthen our position as a leader in the market. Apply for our vacancies.
-                        </p>
-
-                        <a href="#" class="btn btn-danger" style="padding: 8px 22px;">
-                            Learn more
-                        </a>
-                    </div>
-
-                </div>
-            </div>
-
-        </div>
-    </div>
-</section>
+        new Chart(document.getElementById('changeActivityChart'), {
+            type: 'line',
+            data: {
+                labels: activityData.labels,
+                datasets: [{
+                    label: 'Changes',
+                    data: activityData.values,
+                    borderColor: '#c62828',
+                    backgroundColor: 'rgba(198,40,40,0.10)',
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: 2,
+                    pointHoverRadius: 4
+                }]
+            },
+            options: Object.assign({ maintainAspectRatio: false }, chartDefaults)
+        });
+    })();
+</script>

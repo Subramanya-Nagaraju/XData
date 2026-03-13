@@ -18,6 +18,10 @@ urlpatterns = [
     path('logout/', app_views.logout_view, name='logout'),
     path('404/', app_views.custom_404, name='custom_404'),
     path('clear/<int:pk>/', app_views.clear_entry, name='clear_entry'),
+    path('terminate/<int:pk>/', app_views.terminate_crane, name='terminate_crane'),
+    path('delete_crane/<int:pk>/', app_views.delete_crane, name='delete_crane'),
+    path('terminations/', app_views.terminations_list, name='terminations_list'),
+    path('history/', app_views.history_list, name='history_list'),
 ]
 
 handler404 = 'app.views.custom_404'

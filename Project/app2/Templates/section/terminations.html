@@ -1,0 +1,214 @@
+{% load static %}
+<html>
+<head>
+	<title>Termination Records</title>
+	<style>
+		.container {
+			padding: 20px;
+		}
+
+		h2 {
+			margin-bottom: 20px;
+		}
+
+		.top-bar {
+			display: flex;
+			gap: 10px;
+			margin-bottom: 20px;
+			align-items: center;
+			flex-wrap: wrap;
+		}
+
+		.btn {
+			padding: 8px 14px;
+			background: black;
+			color: white;
+			text-decoration: none;
+			border-radius: 5px;
+			border: none;
+			cursor: pointer;
+		}
+
+		.btn:hover {
+			background: #333;
+			color: white;
+		}
+
+		.table-wrapper {
+			overflow-x: auto;
+		}
+
+		table {
+			border-collapse: collapse;
+			width: 100%;
+			min-width: 3200px;
+		}
+
+		th, td {
+			padding: 10px;
+			border: 1px solid #ddd;
+			text-align: center;
+			white-space: nowrap;
+		}
+
+		th {
+			background: black;
+			color: white;
+		}
+
+		tr:nth-child(even) {
+			background: #f2f2f2;
+		}
+
+		tr:hover {
+			background: #e9e9e9;
+		}
+
+		.reason-cell {
+			max-width: 280px;
+			white-space: normal;
+			text-align: left;
+			word-break: break-word;
+		}
+
+		.badge-terminated {
+			display: inline-block;
+			padding: 3px 8px;
+			background: #dc3545;
+			color: white;
+			border-radius: 4px;
+			font-size: 0.8em;
+			font-weight: bold;
+		}
+
+		.message {
+			margin-bottom: 15px;
+			padding: 10px 12px;
+			border-radius: 5px;
+		}
+
+		.message.success {
+			background: #d4edda;
+			color: #155724;
+		}
+
+		.message.error {
+			background: #f8d7da;
+			color: #721c24;
+		}
+
+		.pagination {
+			margin-top: 15px;
+		}
+
+		.pagination a {
+			margin: 4px;
+			padding: 6px 10px;
+			background: #eee;
+			text-decoration: none;
+			border-radius: 4px;
+			color: #222;
+		}
+
+		.pagination a:hover {
+			background: #ddd;
+		}
+	</style>
+</head>
+<body>
+
+<div class="container">
+	<h2>Termination Records</h2>
+
+	{% if messages %}
+		{% for message in messages %}
+			<div class="message {% if message.tags == 'success' %}success{% else %}error{% endif %}">
+				{{ message }}
+			</div>
+		{% endfor %}
+	{% endif %}
+
+	<div class="top-bar">
+		<a href="{% url 'update_rg' %}" class="btn">&larr; Back to Update</a>
+	</div>
+
+	<div class="table-wrapper">
+		<table>
+			<thead>
+				<tr>
+					<th>ID</th>
+					<th>Kran Typ</th>
+					<th>Fabrik Nr</th>
+					<th>Kunde</th>
+					<th>LG</th>
+					<th>Kundenummer</th>
+					<th>Version</th>
+					<th>Serien Nr</th>
+					<th>Telefon</th>
+					<th>IP</th>
+					<th>Rueckmeldung</th>
+					<th>IT Nr</th>
+					<th>Kundenkran</th>
+					<th>Lizenz Ja</th>
+					<th>Lizenzdatum</th>
+					<th>Bezahlt bis Rg.erstellt</th>
+					<th>servicemeldung</th>
+					<th>Amount</th>
+					<th>Status</th>
+					<th>Terminated At</th>
+					<th>Terminated By</th>
+					<th>Reason</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for t in page_obj %}
+				<tr>
+					<td>{{ t.crane.id }}</td>
+					<td>{{ t.crane.kran_typ }}</td>
+					<td>{{ t.crane.fabrik_nr }}</td>
+					<td>{{ t.crane.kunde }}</td>
+					<td>{{ t.crane.lg }}</td>
+					<td>{{ t.crane.kundenummer }}</td>
+					<td>{{ t.crane.version }}</td>
+					<td>{{ t.crane.serien_nr }}</td>
+					<td>{{ t.crane.tel_nr }}</td>
+					<td>{{ t.crane.ip }}</td>
+					<td>{{ t.crane.rueckmeldung }}</td>
+					<td>{{ t.crane.it_nr }}</td>
+					<td>{{ t.crane.kundenkran }}</td>
+					<td>{{ t.crane.lizenz_ja }}</td>
+					<td>{{ t.original_lizenzdatum }}</td>
+					<td>{{ t.original_expiry_date }}</td>
+					<td>{{ t.crane.servicemeldung }}</td>
+					<td>{{ t.crane.amount }}</td>
+					<td><span class="badge-terminated">Terminated</span></td>
+					<td>{{ t.terminated_at|date:"Y-m-d H:i" }}</td>
+					<td>{{ t.terminated_by.username|default:"&mdash;" }}</td>
+					<td class="reason-cell">{{ t.termination_reason|default:"&mdash;" }}</td>
+				</tr>
+				{% empty %}
+				<tr>
+					<td colspan="22">No termination records found.</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+
+	<div class="pagination">
+		{% if page_obj.has_previous %}
+			<a href="?page=1">&laquo; First</a>
+			<a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+		{% endif %}
+
+		Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+
+		{% if page_obj.has_next %}
+			<a href="?page={{ page_obj.next_page_number }}">Next</a>
+			<a href="?page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
+		{% endif %}
+	</div>
+</div>
+
+</body>
+</html>

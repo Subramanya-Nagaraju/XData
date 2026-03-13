@@ -170,16 +170,47 @@
 						btn.classList.remove('inactive');
 						btn.classList.add('active');
 						btn.textContent = 'Active';
+						btn.title = '';
 						row.classList.remove('inactive');
 					} else {
 						btn.classList.remove('active');
 						btn.classList.add('inactive');
 						btn.textContent = 'Inactive';
+						if (data.is_terminated) {
+							btn.title = 'This client is terminated';
+						} else {
+							btn.title = '';
+						}
 						row.classList.add('inactive');
 					}
+				} else if (data.error) {
+					alert(data.error);
 				}
 			})
 			.catch(error => console.error('Error:', error));
+		}
+
+		function escapeHtml(text) {
+			var map = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'};
+			return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+		}
+
+		function openTerminateModal(pk, kunde) {
+			document.getElementById('terminateModalMsg').innerHTML =
+				'Are you sure you want to <strong>terminate early</strong> Crane ID <strong>' + pk + '</strong> (' + escapeHtml(kunde) + ')?<br>' +
+				'<span style="color:#dc3545;">This will immediately mark the client as <strong>Inactive</strong>, even if the license has not yet expired.</span>';
+			document.getElementById('terminateForm').action = '/terminate/' + pk + '/';
+			document.getElementById('terminateReasonInput').value = '';
+			document.getElementById('terminateModal').style.display = 'flex';
+		}
+
+		function closeTerminateModal() {
+			document.getElementById('terminateModal').style.display = 'none';
+		}
+
+		function confirmTerminate() {
+			document.getElementById('terminateReasonHidden').value = document.getElementById('terminateReasonInput').value;
+			document.getElementById('terminateForm').submit();
 		}
 	</script>
 </head>
@@ -198,7 +229,7 @@
 
 	<div class="top-bar">
 		<form method="get" class="search-box">
-			<input type="text" name="q" value="{{ search_query }}" placeholder="Search by Serien Nr only">
+			<input type="text" name="q" value="{{ search_query }}" placeholder="Search across all columns">
 			<button type="submit" class="btn">Search</button>
 		</form>
 		<a href="{% url 'update_rg' %}" class="btn">Reset</a>
@@ -228,6 +259,8 @@
 					<th>Amount</th>
 					<th>Status</th>
 					<th>Action</th>
+					<th>Terminate</th>
+					<th>Delete</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -256,6 +289,7 @@
 					<td>
 						<button 
 							class="status-btn {% if kran.is_active %}active{% else %}inactive{% endif %}" 
+							title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif not kran.is_active and kran.is_expired %}License is expired. Update the expiry date to activate.{% endif %}"
 							onclick="toggleStatus({{ kran.id }}, this)">
 							{% if kran.is_active %}Active{% else %}Inactive{% endif %}
 						</button>
@@ -265,14 +299,32 @@
 							{% csrf_token %}
 							<input type="hidden" name="crane_id" value="{{ kran.id }}">
 							<input type="hidden" name="next" value="{{ request.get_full_path }}">
-							<input type="text" class="date-input" name="bezahlt_bis_rg_erstellt" value="{{ kran.bezahlt_bis_rg_erstellt }}" placeholder="YYYY-MM-DD">
-							<button type="submit" name="action" value="update_expiry" class="btn">Update Expiry</button>
+							<input type="text" class="date-input" name="bezahlt_bis_rg_erstellt" value="{{ kran.bezahlt_bis_rg_erstellt }}" placeholder="YYYY-MM-DD" {% if kran.is_terminated %}disabled title="Terminated rows cannot be updated"{% endif %}>
+							<button type="submit" name="action" value="update_expiry" class="btn" {% if kran.is_terminated %}disabled title="Terminated rows cannot be updated" style="opacity:0.6; cursor:not-allowed;"{% endif %}>Update Expiry</button>
+						</form>
+					</td>
+					<td style="text-align:center;">
+						{% if kran.is_active %}
+						<button type="button"
+							onclick="openTerminateModal({{ kran.id }}, '{{ kran.kunde|escapejs }}')"
+							style="padding:6px 14px; background:#dc3545; color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">
+							Terminate
+						</button>
+						{% else %}
+						<span style="color:#bbb; font-size:0.9em;">—</span>
+						{% endif %}
+					</td>
+					<td>
+						<form method="post" action="{% url 'delete_crane' kran.id %}" onsubmit="return confirm('Delete this row permanently from all tables?');">
+							{% csrf_token %}
+							<input type="hidden" name="next" value="{{ request.get_full_path }}">
+							<button type="submit" class="btn" style="background:#6c757d;">Delete</button>
 						</form>
 					</td>
 				</tr>
 				{% empty %}
 				<tr>
-					<td colspan="21">No rows found.</td>
+					<td colspan="23">No rows found.</td>
 				</tr>
 				{% endfor %}
 			</tbody>
@@ -293,6 +345,29 @@
 		{% endif %}
 	</div>
 </div>
+
+<!-- Termination confirmation modal -->
+<div id="terminateModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center;">
+	<div style="background:#fff; border-radius:8px; padding:28px 32px; max-width:480px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+		<h3 style="margin:0 0 14px; color:#c0392b;">&#9888; Terminate Lease Early</h3>
+		<p id="terminateModalMsg" style="margin-bottom:16px; line-height:1.6;"></p>
+		<label style="display:block; font-weight:bold; margin-bottom:6px;">Reason <span style="font-weight:normal; color:#888;">(optional)</span>:</label>
+		<textarea id="terminateReasonInput" rows="3" placeholder="Enter reason for early termination..."
+			style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; resize:vertical; box-sizing:border-box; font-size:14px;"></textarea>
+		<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:18px;">
+			<button type="button" onclick="closeTerminateModal()"
+				style="padding:8px 18px; border:1px solid #bbb; background:#fff; border-radius:4px; cursor:pointer; font-size:14px;">Cancel</button>
+			<button type="button" onclick="confirmTerminate()"
+				style="padding:8px 18px; background:#dc3545; color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:bold; font-size:14px;">Confirm Terminate</button>
+		</div>
+	</div>
+</div>
+
+<!-- Hidden form submitted by the modal -->
+<form id="terminateForm" method="post" action="" style="display:none;">
+	{% csrf_token %}
+	<input type="hidden" name="reason" id="terminateReasonHidden" value="">
+</form>
 
 </body>
 </html>

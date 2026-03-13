@@ -100,6 +100,15 @@
             background: #333;
         }
 
+        .filter-btn.overdue {
+            background: #f1c40f;
+            color: #222;
+        }
+
+        .filter-btn.overdue:hover {
+            background: #d4ac0d;
+        }
+
         /* 🔝 TOP BAR WITH EXPORT */
         .top-bar {
             display: flex;
@@ -246,7 +255,7 @@
 
 <div class="container">
 
-<h2> Search Due</h2>
+<h2> Search Due "Bezahlt bis Rg.erstellt"</h2>
 
 <!-- Date Filter Section -->
 <div class="filter-section">
@@ -346,12 +355,10 @@
             <td>{{ kran.servicemeldung }}</td>
             <td>{{ kran.amount }}</td>
             <td>
-                <form method="post" style="display:flex; justify-content:center; gap:8px;">
-                    {% csrf_token %}
-                    <input type="hidden" name="crane_id" value="{{ kran.id }}">
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <button class="filter-btn" name="action" value="mark_paid" type="submit">Paid</button>
-                </form>
+                <button class="filter-btn{% if kran.is_due_overdue %} overdue{% endif %}"
+                    onclick="openPayModal({{ kran.id }}, '{{ kran.kunde|escapejs }}', '{{ kran.next_due_preview|date:'Y-m-d'|default:''|escapejs }}')"
+                    title="{% if kran.is_due_overdue %}Due date has passed{% endif %}"
+                    type="button">Paid</button>
             </td>
         </tr>
         {% empty %}
@@ -381,4 +388,101 @@
 </div>
 
 </body>
+
+<!-- ===== PAY MODAL ===== -->
+<div id="payModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:#fff; border-radius:10px; padding:32px 28px; width:420px; max-width:95vw; box-shadow:0 8px 32px rgba(0,0,0,0.25);">
+        <h3 style="margin:0 0 6px 0; font-size:18px; color:#222;">Mark as Paid</h3>
+        <p id="payModalKunde" style="margin:0 0 20px 0; font-size:13px; color:#555;"></p>
+
+        <label style="font-weight:600; font-size:13px; color:#333; display:block; margin-bottom:6px;">
+            Actual Payment Date <span style="color:#dc3545;">*</span>
+        </label>
+        <input type="date" id="payDateInput"
+            style="width:100%; padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px; margin-bottom:6px;">
+        <p style="font-size:11px; color:#888; margin:0 0 20px 0;">
+            Enter the date the client actually made the payment.<br>
+            <em>Year is locked to next due year. System also records click timestamp.</em>
+        </p>
+
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button onclick="closePayModal()"
+                style="padding:9px 20px; background:#f0f0f0; color:#333; border:none; border-radius:6px; cursor:pointer; font-weight:600;">
+                Cancel
+            </button>
+            <button onclick="confirmPay()"
+                style="padding:9px 20px; background:#28a745; color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:600;">
+                Confirm Paid
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden pay form -->
+<form id="payForm" method="post" style="display:none;">
+    {% csrf_token %}
+    <input type="hidden" name="crane_id" id="payFormCraneId">
+    <input type="hidden" name="next" id="payFormNext">
+    <input type="hidden" name="action" value="mark_paid">
+    <input type="hidden" name="actual_paid_date" id="payFormDate">
+</form>
+
+<script>
+var payAllowedYear = null;
+
+function openPayModal(craneId, kunde, nextDueDate) {
+    document.getElementById('payFormCraneId').value = craneId;
+    document.getElementById('payFormNext').value = window.location.href;
+    var dueYear = null;
+    if (nextDueDate && /^\d{4}-\d{2}-\d{2}$/.test(nextDueDate)) {
+        dueYear = parseInt(nextDueDate.slice(0, 4), 10);
+    }
+
+    var payInput = document.getElementById('payDateInput');
+    if (dueYear) {
+        payAllowedYear = dueYear;
+        payInput.min = dueYear + '-01-01';
+        payInput.max = dueYear + '-12-31';
+        payInput.value = nextDueDate;
+        document.getElementById('payModalKunde').textContent = 'Client: ' + kunde + '  |  Next Due: ' + nextDueDate + '  |  Allowed Year: ' + dueYear;
+    } else {
+        payAllowedYear = null;
+        payInput.removeAttribute('min');
+        payInput.removeAttribute('max');
+        payInput.value = new Date().toISOString().split('T')[0];
+        document.getElementById('payModalKunde').textContent = 'Client: ' + kunde;
+    }
+
+    var overlay = document.getElementById('payModalOverlay');
+    overlay.style.display = 'flex';
+}
+
+function closePayModal() {
+    document.getElementById('payModalOverlay').style.display = 'none';
+}
+
+function confirmPay() {
+    var dateVal = document.getElementById('payDateInput').value;
+    if (!dateVal) {
+        alert('Please enter the actual payment date.');
+        return;
+    }
+
+    if (payAllowedYear) {
+        var selectedYear = parseInt(dateVal.slice(0, 4), 10);
+        if (selectedYear !== payAllowedYear) {
+            alert('Payment date year must be ' + payAllowedYear + ' (next due year only).');
+            return;
+        }
+    }
+
+    document.getElementById('payFormDate').value = dateVal;
+    document.getElementById('payForm').submit();
+}
+
+document.getElementById('payModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closePayModal();
+});
+</script>
+
 </html>

@@ -876,3 +876,20 @@ div#orderSummary {
 .carousel-control-next:hover {
     opacity: 1;
 }
+
+/* Wider desktop content area — 3 cm gaps on each side */
+.layout-width .container {
+    width: calc(100% - 6cm);
+    max-width: none;
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+@media (min-width: 1200px) {
+    .layout-width .container {
+        width: calc(100% - 6cm);
+        max-width: none;
+    }
+}
