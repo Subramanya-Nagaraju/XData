@@ -18,6 +18,26 @@
             padding: 20px;
         }
 
+        .alerts {
+            margin-bottom: 14px;
+        }
+
+        .alert-item {
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            border: 1px solid #e2e2e2;
+            background: #f7f7f7;
+            color: #333;
+        }
+
+        .alert-item.error {
+            background: #fdecea;
+            border-color: #f5c2c7;
+            color: #842029;
+        }
+
         h2 {
             margin-bottom: 20px;
             color: #333;
@@ -249,14 +269,29 @@
             font-weight: 600;
             color: #333;
         }
+
+        #searchDueTableSection.is-loading {
+            opacity: 0.6;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
 
+{% if messages %}
+<div class="alerts">
+    {% for message in messages %}
+    <div class="alert-item {% if message.tags == 'error' %}error{% endif %}">{{ message }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <h2> Search Due "Bezahlt bis Rg.erstellt"</h2>
 
+<div id="searchDueTableSection">
 <!-- Date Filter Section -->
 <div class="filter-section">
     <form method="GET">
@@ -356,7 +391,7 @@
             <td>{{ kran.amount }}</td>
             <td>
                 <button class="filter-btn{% if kran.is_due_overdue %} overdue{% endif %}"
-                    onclick="openPayModal({{ kran.id }}, '{{ kran.kunde|escapejs }}', '{{ kran.next_due_preview|date:'Y-m-d'|default:''|escapejs }}')"
+                    onclick="openPayModal({{ kran.id }}, '{{ kran.kunde|escapejs }}', '{{ kran.current_due_date|date:'Y-m-d'|default:''|escapejs }}')"
                     title="{% if kran.is_due_overdue %}Due date has passed{% endif %}"
                     type="button">Paid</button>
             </td>
@@ -384,6 +419,7 @@
         <a href="?page={{ page_obj.paginator.num_pages }}&year={{ selected_year }}&month={{ selected_month }}&day={{ selected_day }}">Last &raquo;</a>
     {% endif %}
 </div>
+</div>
 
 </div>
 
@@ -398,11 +434,11 @@
         <label style="font-weight:600; font-size:13px; color:#333; display:block; margin-bottom:6px;">
             Actual Payment Date <span style="color:#dc3545;">*</span>
         </label>
-        <input type="date" id="payDateInput"
+        <input type="date" id="payDateInput" max="{{ today_iso }}" onkeydown="return false;"
             style="width:100%; padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px; margin-bottom:6px;">
         <p style="font-size:11px; color:#888; margin:0 0 20px 0;">
             Enter the date the client actually made the payment.<br>
-            <em>Year is locked to next due year. System also records click timestamp.</em>
+            <em>You can select today or any previous date. Future dates are not allowed.</em>
         </p>
 
         <div style="display:flex; gap:10px; justify-content:flex-end;">
@@ -425,31 +461,73 @@
     <input type="hidden" name="next" id="payFormNext">
     <input type="hidden" name="action" value="mark_paid">
     <input type="hidden" name="actual_paid_date" id="payFormDate">
+    <input type="hidden" name="client_today" id="payFormClientToday">
 </form>
 
 <script>
-var payAllowedYear = null;
+function getLocalTodayIso() {
+    var now = new Date();
+    var year = now.getFullYear();
+    var month = String(now.getMonth() + 1).padStart(2, '0');
+    var day = String(now.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
+}
 
-function openPayModal(craneId, kunde, nextDueDate) {
-    document.getElementById('payFormCraneId').value = craneId;
-    document.getElementById('payFormNext').value = window.location.href;
-    var dueYear = null;
-    if (nextDueDate && /^\d{4}-\d{2}-\d{2}$/.test(nextDueDate)) {
-        dueYear = parseInt(nextDueDate.slice(0, 4), 10);
+var todayIso = getLocalTodayIso();
+
+function fetchSearchDueTable(url) {
+    var section = document.getElementById('searchDueTableSection');
+    if (!section) {
+        window.location.href = url;
+        return;
     }
 
+    var targetUrl = new URL(url, window.location.origin);
+    section.classList.add('is-loading');
+
+    fetch(targetUrl.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function (response) {
+        if (!response.ok) {
+            throw new Error('Request failed');
+        }
+        return response.text();
+    })
+    .then(function (html) {
+        var parsed = new DOMParser().parseFromString(html, 'text/html');
+        var nextSection = parsed.getElementById('searchDueTableSection');
+        if (!nextSection) {
+            throw new Error('Missing section');
+        }
+
+        section.innerHTML = nextSection.innerHTML;
+        window.history.replaceState({}, '', targetUrl.pathname + targetUrl.search);
+    })
+    .catch(function () {
+        window.location.href = targetUrl.toString();
+    })
+    .finally(function () {
+        section.classList.remove('is-loading');
+    });
+}
+
+function openPayModal(craneId, kunde, currentDueDate) {
+    document.getElementById('payFormCraneId').value = craneId;
+    document.getElementById('payFormNext').value = window.location.href;
+    document.getElementById('payFormClientToday').value = todayIso;
+
     var payInput = document.getElementById('payDateInput');
-    if (dueYear) {
-        payAllowedYear = dueYear;
-        payInput.min = dueYear + '-01-01';
-        payInput.max = dueYear + '-12-31';
-        payInput.value = nextDueDate;
-        document.getElementById('payModalKunde').textContent = 'Client: ' + kunde + '  |  Next Due: ' + nextDueDate + '  |  Allowed Year: ' + dueYear;
+    payInput.removeAttribute('min');
+    payInput.max = todayIso;
+
+    if (currentDueDate && /^\d{4}-\d{2}-\d{2}$/.test(currentDueDate)) {
+        payInput.value = currentDueDate <= todayIso ? currentDueDate : todayIso;
+        document.getElementById('payModalKunde').textContent = 'Client: ' + kunde + '  |  Due Date: ' + currentDueDate;
     } else {
-        payAllowedYear = null;
-        payInput.removeAttribute('min');
-        payInput.removeAttribute('max');
-        payInput.value = new Date().toISOString().split('T')[0];
+        payInput.value = todayIso;
         document.getElementById('payModalKunde').textContent = 'Client: ' + kunde;
     }
 
@@ -468,12 +546,9 @@ function confirmPay() {
         return;
     }
 
-    if (payAllowedYear) {
-        var selectedYear = parseInt(dateVal.slice(0, 4), 10);
-        if (selectedYear !== payAllowedYear) {
-            alert('Payment date year must be ' + payAllowedYear + ' (next due year only).');
-            return;
-        }
+    if (dateVal > todayIso) {
+        alert('Actual payment date cannot be in the future.');
+        return;
     }
 
     document.getElementById('payFormDate').value = dateVal;
@@ -482,6 +557,46 @@ function confirmPay() {
 
 document.getElementById('payModalOverlay').addEventListener('click', function(e) {
     if (e.target === this) closePayModal();
+});
+
+document.getElementById('payDateInput').addEventListener('change', function () {
+    if (this.value && this.value > todayIso) {
+        this.value = todayIso;
+        alert('Future dates are disabled for actual payment date.');
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    var payInput = document.getElementById('payDateInput');
+    if (payInput) {
+        payInput.max = todayIso;
+    }
+});
+
+document.addEventListener('submit', function (event) {
+    var form = event.target.closest('#searchDueTableSection form');
+    if (!form) {
+        return;
+    }
+
+    var method = (form.getAttribute('method') || 'get').toLowerCase();
+    if (method !== 'get') {
+        return;
+    }
+
+    event.preventDefault();
+    var params = new URLSearchParams(new FormData(form));
+    fetchSearchDueTable(window.location.pathname + '?' + params.toString());
+});
+
+document.addEventListener('click', function (event) {
+    var link = event.target.closest('#searchDueTableSection .pagination a');
+    if (!link) {
+        return;
+    }
+
+    event.preventDefault();
+    fetchSearchDueTable(link.href);
 });
 </script>
 

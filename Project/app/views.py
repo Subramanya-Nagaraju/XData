@@ -1,32 +1,23 @@
-from django.shortcuts import render
-from django.shortcuts import render, redirect
-from django.contrib.auth.models import User
-from django.contrib.auth import logout
-from django.contrib import messages
-from django.shortcuts import render
-from .models import Crane   # change if your model name is different
-from django.core.paginator import Paginator
-from django.http import HttpResponse, JsonResponse
 import csv
-from django.contrib.auth import authenticate, login as auth_login
-from django.contrib import messages
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from django.views.decorators.cache import never_cache
-from django.http import Http404
-from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
+from collections import Counter
+from datetime import date, datetime
+
 from dateutil.relativedelta import relativedelta
-from .models import ChangeHistory, Crane, CraneDueTracking, CranePaymentHistory, Termination
-from datetime import datetime
-from datetime import date
-from datetime import timedelta
-from django.utils import timezone
-from django.shortcuts import get_object_or_404
-from django.db import transaction
-from django.db.models import Count, Exists, OuterRef, Q, CharField
-from django.db.models.functions import Cast
 from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import authenticate, login as auth_login, logout
+from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Count, Exists, OuterRef
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
+
+from .models import ChangeHistory, Crane, CraneDueTracking, CranePaymentHistory, Termination
 
 
 def _log_change(request, action, crane=None, details=''):
@@ -171,6 +162,10 @@ def _mark_due_paid_in_background(crane, actual_paid_date=None):
 
     if actual_paid_date is None:
         actual_paid_date = timezone.localdate()
+
+    server_today = min(timezone.localdate(), date.today())
+    if actual_paid_date > server_today:
+        return None, None, None
 
     next_due = _next_due_preview_date(current_due, expiry_date)
     if not next_due:
@@ -337,6 +332,7 @@ def _get_due_filtered_queryset(request):
         expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
         next_due_preview = _next_due_preview_date(current_due, expiry_date)
 
+        crane.current_due_date = current_due
         crane.next_due_preview = next_due_preview
         crane.is_due_overdue = bool(current_due and current_due < today_value and (not expiry_date or current_due < expiry_date))
 
@@ -427,6 +423,7 @@ def _build_due_filter_context(page_obj, year, month, day, sort_by, order):
         'selected_day': day,
         'sort_by': sort_by,
         'order': order,
+        'today_iso': timezone.localdate().isoformat(),
     }
 
 
@@ -486,7 +483,11 @@ def index(request):
     _sync_expired_cranes()
 
     today_value = date.today()
-    soon_limit = today_value + timedelta(days=30)
+    growth_window = request.GET.get('growth_window', 'all').strip().lower()
+    if growth_window not in {'all', '1m', '3m', '6m'}:
+        growth_window = 'all'
+
+    growth_year = request.GET.get('growth_year', 'all').strip()
 
     range_from_raw = request.GET.get('from_date', '').strip()
     range_to_raw = request.GET.get('to_date', '').strip()
@@ -559,36 +560,6 @@ def index(request):
                     'days_left': days_left,
                 })
 
-    recent_changes_queryset = ChangeHistory.objects.select_related('changed_by').all()
-    if range_from:
-        recent_changes_queryset = recent_changes_queryset.filter(changed_at__date__gte=range_from)
-    if range_to:
-        recent_changes_queryset = recent_changes_queryset.filter(changed_at__date__lte=range_to)
-
-    recent_changes = recent_changes_queryset[:12]
-
-    activity_start = range_from or (today_value - timedelta(days=29))
-    activity_end = range_to or today_value
-    if activity_start > activity_end:
-        activity_start, activity_end = activity_end, activity_start
-
-    activity_dates = []
-    activity_map = {}
-    cursor = activity_start
-    while cursor <= activity_end:
-        activity_dates.append(cursor)
-        activity_map[cursor] = 0
-        cursor += timedelta(days=1)
-
-    change_activity_queryset = ChangeHistory.objects.filter(
-        changed_at__date__gte=activity_start,
-        changed_at__date__lte=activity_end,
-    ).only('changed_at')
-    for changed_at in change_activity_queryset.values_list('changed_at', flat=True):
-        changed_date = timezone.localtime(changed_at).date() if timezone.is_aware(changed_at) else changed_at.date()
-        if changed_date in activity_map:
-            activity_map[changed_date] += 1
-
     customer_counts = list(
         Crane.objects.exclude(kunde__isnull=True)
         .exclude(kunde__exact='')
@@ -596,6 +567,113 @@ def index(request):
         .annotate(total=Count('id'))
         .order_by('-total', 'kunde')[:10]
     )
+
+    growth_records = []
+    growth_years = set()
+    growth_queryset = Crane.objects.all().only('id', 'kunde', 'amount', 'lizenzdatum', 'rueckmeldung')
+    for crane in growth_queryset:
+        anchor_date = _parse_iso_date(crane.lizenzdatum) or _parse_iso_date(crane.rueckmeldung)
+        if not anchor_date:
+            continue
+
+        amount_value = crane.amount or 0
+        growth_records.append({
+            'date': anchor_date,
+            'amount': amount_value,
+            'kunde': crane.kunde or '',
+        })
+        growth_years.add(anchor_date.year)
+
+    growth_year_options = [str(year_value) for year_value in sorted(growth_years, reverse=True)]
+    growth_scope_label = 'All Years'
+    filtered_growth_records = list(growth_records)
+    growth_labels = []
+    growth_amount_values = []
+    growth_count_values = []
+    selected_growth_year = 'all'
+    selected_growth_window = 'all'
+
+    if growth_year.isdigit() and int(growth_year) in growth_years:
+        selected_year_value = int(growth_year)
+        selected_growth_year = str(selected_year_value)
+        filtered_growth_records = [
+            row for row in growth_records
+            if row['date'].year == selected_year_value
+        ]
+
+        monthly_buckets = {
+            month_value: {
+                'label': date(selected_year_value, month_value, 1).strftime('%b'),
+                'amount': 0,
+                'count': 0,
+            }
+            for month_value in range(1, 13)
+        }
+
+        for row in filtered_growth_records:
+            monthly_buckets[row['date'].month]['amount'] += row['amount']
+            monthly_buckets[row['date'].month]['count'] += 1
+
+        growth_scope_label = f'Year {selected_year_value}'
+        growth_labels = [bucket['label'] for bucket in monthly_buckets.values()]
+        growth_amount_values = [bucket['amount'] for bucket in monthly_buckets.values()]
+        growth_count_values = [bucket['count'] for bucket in monthly_buckets.values()]
+    elif growth_window != 'all':
+        selected_growth_window = growth_window
+        months_back = {'1m': 1, '3m': 3, '6m': 6}[growth_window]
+        range_start = today_value - relativedelta(months=months_back)
+        filtered_growth_records = [
+            row for row in growth_records
+            if range_start <= row['date'] <= today_value
+        ]
+
+        month_cursor = date(range_start.year, range_start.month, 1)
+        month_limit = date(today_value.year, today_value.month, 1)
+        monthly_buckets = {}
+        while month_cursor <= month_limit:
+            monthly_buckets[month_cursor] = {
+                'label': month_cursor.strftime('%b %Y'),
+                'amount': 0,
+                'count': 0,
+            }
+            month_cursor = month_cursor + relativedelta(months=1)
+
+        for row in filtered_growth_records:
+            bucket_key = date(row['date'].year, row['date'].month, 1)
+            if bucket_key in monthly_buckets:
+                monthly_buckets[bucket_key]['amount'] += row['amount']
+                monthly_buckets[bucket_key]['count'] += 1
+
+        growth_scope_label = {
+            '1m': 'Last 1 Month',
+            '3m': 'Last 3 Months',
+            '6m': 'Last 6 Months',
+        }[growth_window]
+        growth_labels = [bucket['label'] for bucket in monthly_buckets.values()]
+        growth_amount_values = [bucket['amount'] for bucket in monthly_buckets.values()]
+        growth_count_values = [bucket['count'] for bucket in monthly_buckets.values()]
+    else:
+        yearly_buckets = {
+            year_value: {
+                'label': str(year_value),
+                'amount': 0,
+                'count': 0,
+            }
+            for year_value in sorted(growth_years)
+        }
+
+        for row in filtered_growth_records:
+            yearly_buckets[row['date'].year]['amount'] += row['amount']
+            yearly_buckets[row['date'].year]['count'] += 1
+
+        growth_labels = [bucket['label'] for bucket in yearly_buckets.values()]
+        growth_amount_values = [bucket['amount'] for bucket in yearly_buckets.values()]
+        growth_count_values = [bucket['count'] for bucket in yearly_buckets.values()]
+
+    growth_total_amount = sum(row['amount'] for row in filtered_growth_records)
+    growth_total_cranes = len(filtered_growth_records)
+    growth_unique_customers = len({row['kunde'] for row in filtered_growth_records if row['kunde']})
+    growth_average_amount = round(growth_total_amount / growth_total_cranes) if growth_total_cranes else 0
 
     total_denominator = max(total_cranes, 1)
     active_denominator = max(active_count, 1)
@@ -619,14 +697,27 @@ def index(request):
         'labels': list(expiry_buckets.keys()),
         'values': list(expiry_buckets.values()),
     }
-    change_activity_chart = {
-        'labels': [entry.strftime('%m-%d') for entry in activity_dates],
-        'values': [activity_map[entry] for entry in activity_dates],
+    amount_growth_chart = {
+        'labels': growth_labels,
+        'amount_values': growth_amount_values,
+        'count_values': growth_count_values,
     }
     customer_chart = {
         'labels': [entry['kunde'] for entry in customer_counts],
         'values': [entry['total'] for entry in customer_counts],
     }
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse({
+            'amount_growth_chart': amount_growth_chart,
+            'growth_scope_label': growth_scope_label,
+            'growth_total_amount': growth_total_amount,
+            'growth_total_cranes': growth_total_cranes,
+            'growth_unique_customers': growth_unique_customers,
+            'growth_average_amount': growth_average_amount,
+            'selected_growth_year': selected_growth_year,
+            'selected_growth_window': selected_growth_window,
+        })
 
     return render(
         request,
@@ -641,7 +732,6 @@ def index(request):
             "expiring_soon_count": len(expiring_rows),
             "overdue_rows": overdue_rows[:8],
             "expiring_rows": expiring_rows[:8],
-            "recent_changes": recent_changes,
             "from_date": range_from.isoformat() if range_from else '',
             "to_date": range_to.isoformat() if range_to else '',
             "total_pct": total_pct,
@@ -653,8 +743,16 @@ def index(request):
             "status_chart": status_chart,
             "overdue_aging_chart": overdue_aging_chart,
             "expiry_window_chart": expiry_window_chart,
-            "change_activity_chart": change_activity_chart,
+            "amount_growth_chart": amount_growth_chart,
             "customer_chart": customer_chart,
+            "growth_year_options": growth_year_options,
+            "selected_growth_year": selected_growth_year,
+            "selected_growth_window": selected_growth_window,
+            "growth_scope_label": growth_scope_label,
+            "growth_total_amount": growth_total_amount,
+            "growth_total_cranes": growth_total_cranes,
+            "growth_unique_customers": growth_unique_customers,
+            "growth_average_amount": growth_average_amount,
         },
     )
 
@@ -662,7 +760,43 @@ def index(request):
 @never_cache
 def data(request):
     _sync_expired_cranes()
-    queryset = _with_termination_flag(Crane.objects.all()).order_by('id')
+    queryset = list(_with_termination_flag(Crane.objects.all()).order_by('id'))
+    _attach_expiry_flag(queryset)
+    today_value = date.today()
+
+    major_search_fields = [
+        ('kunde', 'Kunde'),
+        ('kran_typ', 'Kran Typ'),
+        ('fabrik_nr', 'Fabrik Nr'),
+        ('serien_nr', 'Serien Nr'),
+        ('it_nr', 'IT Nr'),
+        ('status', 'Status'),
+    ]
+    allowed_primary_fields = {field for field, _ in major_search_fields}
+
+    primary_field = request.GET.get('primary_field', 'kunde').strip()
+    if primary_field not in allowed_primary_fields:
+        primary_field = 'kunde'
+
+    primary_value = request.GET.get('primary_value', '').strip()
+    ref_kran_typ = request.GET.get('ref_kran_typ', '').strip()
+    ref_status = request.GET.get('ref_status', '').strip().lower()
+    if ref_status not in {'', 'active', 'inactive', 'terminated'}:
+        ref_status = ''
+
+    ref_lizenz_year = request.GET.get('ref_lizenz_year', '').strip()
+    if ref_lizenz_year and (not ref_lizenz_year.isdigit() or len(ref_lizenz_year) != 4):
+        ref_lizenz_year = ''
+
+    ref_amount_bucket = request.GET.get('ref_amount_bucket', '').strip()
+    if ref_amount_bucket not in {'', '0_999', '1000_2499', '2500_4999', '5000_plus'}:
+        ref_amount_bucket = ''
+
+    ref_expiry_bucket = request.GET.get('ref_expiry_bucket', '').strip()
+    if ref_expiry_bucket not in {'', 'expired', '0_30', '31_90', '90_plus'}:
+        ref_expiry_bucket = ''
+
+    ref_lg = request.GET.get('ref_lg', '').strip()
 
     page_size_raw = request.GET.get('page_size', '10').strip()
     try:
@@ -672,6 +806,281 @@ def data(request):
 
     if page_size not in (10, 50, 100):
         page_size = 10
+
+    def _status_value(crane):
+        if getattr(crane, 'is_terminated', False):
+            return 'terminated'
+        return 'active' if crane.is_active else 'inactive'
+
+    def _lizenz_year_value(crane):
+        parsed_date = _parse_iso_date(crane.lizenzdatum)
+        return parsed_date.year if parsed_date else None
+
+    def _matches_amount_bucket(crane, bucket):
+        amount_value = crane.amount if crane.amount is not None else 0
+        if bucket == '0_999':
+            return 0 <= amount_value <= 999
+        if bucket == '1000_2499':
+            return 1000 <= amount_value <= 2499
+        if bucket == '2500_4999':
+            return 2500 <= amount_value <= 4999
+        if bucket == '5000_plus':
+            return amount_value >= 5000
+        return True
+
+    def _expiry_bucket_value(crane):
+        expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+        if not expiry_date:
+            return None
+
+        days_left = (expiry_date - today_value).days
+        if days_left < 0:
+            return 'expired'
+        if days_left <= 30:
+            return '0_30'
+        if days_left <= 90:
+            return '31_90'
+        return '90_plus'
+
+    def _apply_primary_filter(records):
+        if not primary_value:
+            return list(records)
+
+        needle = primary_value.lower()
+
+        if primary_field == 'status':
+            return [
+                crane for crane in records
+                if _status_value(crane) == needle
+            ]
+
+        return [
+            crane for crane in records
+            if needle in str(getattr(crane, primary_field, '') or '').lower()
+        ]
+
+    def _apply_refinements(records, skip=None):
+        filtered_records = list(records)
+
+        if ref_kran_typ and skip != 'ref_kran_typ':
+            filtered_records = [
+                crane for crane in filtered_records
+                if (crane.kran_typ or '').strip() == ref_kran_typ
+            ]
+
+        if ref_status and skip != 'ref_status':
+            filtered_records = [
+                crane for crane in filtered_records
+                if _status_value(crane) == ref_status
+            ]
+
+        if ref_lizenz_year and skip != 'ref_lizenz_year':
+            selected_year = int(ref_lizenz_year)
+            filtered_records = [
+                crane for crane in filtered_records
+                if _lizenz_year_value(crane) == selected_year
+            ]
+
+        if ref_amount_bucket and skip != 'ref_amount_bucket':
+            filtered_records = [
+                crane for crane in filtered_records
+                if _matches_amount_bucket(crane, ref_amount_bucket)
+            ]
+
+        if ref_expiry_bucket and skip != 'ref_expiry_bucket':
+            filtered_records = [
+                crane for crane in filtered_records
+                if _expiry_bucket_value(crane) == ref_expiry_bucket
+            ]
+
+        if ref_lg and skip != 'ref_lg':
+            filtered_records = [
+                crane for crane in filtered_records
+                if (crane.lg or '').strip().lower() == ref_lg.lower()
+            ]
+
+        return filtered_records
+
+    def _build_query(updates=None, remove_keys=None):
+        params = request.GET.copy()
+        params.pop('export', None)
+        params.pop('page', None)
+        if 'page_size' not in params:
+            params['page_size'] = str(page_size)
+
+        if remove_keys:
+            for key in remove_keys:
+                params.pop(key, None)
+
+        if updates:
+            for key, value in updates.items():
+                if value is None or str(value).strip() == '':
+                    params.pop(key, None)
+                else:
+                    params[key] = str(value)
+
+        query_string = params.urlencode()
+        return f'?{query_string}' if query_string else '?'
+
+    total_records = len(queryset)
+    primary_filtered_records = _apply_primary_filter(queryset)
+    filtered_records = _apply_refinements(primary_filtered_records)
+
+    customer_name_counts = Counter(
+        (crane.kunde or '').strip()
+        for crane in primary_filtered_records
+        if (crane.kunde or '').strip()
+    )
+    if primary_field == 'kunde' and primary_value:
+        customer_suggestions = [
+            customer_name
+            for customer_name, _ in customer_name_counts.most_common()
+            if primary_value.lower() in customer_name.lower()
+        ][:12]
+    else:
+        customer_suggestions = [
+            customer_name
+            for customer_name, _ in customer_name_counts.most_common(12)
+        ]
+
+    def _facet_option(value, label, count, selected_value, param_name):
+        return {
+            'value': str(value),
+            'label': label,
+            'count': count,
+            'active': str(selected_value) == str(value),
+            'url': _build_query({param_name: value}),
+        }
+
+    kran_typ_source = _apply_refinements(primary_filtered_records, skip='ref_kran_typ')
+    kran_typ_counts = Counter(
+        (crane.kran_typ or '').strip()
+        for crane in kran_typ_source
+        if (crane.kran_typ or '').strip()
+    )
+    facet_kran_typ_options = [
+        _facet_option(value, value, count, ref_kran_typ, 'ref_kran_typ')
+        for value, count in kran_typ_counts.most_common(25)
+    ]
+
+    status_source = _apply_refinements(primary_filtered_records, skip='ref_status')
+    status_counts = Counter(_status_value(crane) for crane in status_source)
+    status_labels = {
+        'active': 'Active',
+        'inactive': 'Inactive',
+        'terminated': 'Terminated',
+    }
+    facet_status_options = [
+        _facet_option(status_key, status_labels[status_key], status_counts.get(status_key, 0), ref_status, 'ref_status')
+        for status_key in ('active', 'inactive', 'terminated')
+        if status_counts.get(status_key, 0) or ref_status == status_key
+    ]
+
+    lizenz_year_source = _apply_refinements(primary_filtered_records, skip='ref_lizenz_year')
+    lizenz_year_counts = Counter(
+        _lizenz_year_value(crane)
+        for crane in lizenz_year_source
+        if _lizenz_year_value(crane) is not None
+    )
+    facet_lizenz_year_options = [
+        _facet_option(year_value, str(year_value), lizenz_year_counts.get(year_value, 0), ref_lizenz_year, 'ref_lizenz_year')
+        for year_value in sorted(lizenz_year_counts.keys(), reverse=True)
+    ]
+
+    amount_bucket_labels = {
+        '0_999': 'EUR 0 - 999',
+        '1000_2499': 'EUR 1000 - 2499',
+        '2500_4999': 'EUR 2500 - 4999',
+        '5000_plus': 'EUR 5000+',
+    }
+    amount_source = _apply_refinements(primary_filtered_records, skip='ref_amount_bucket')
+    amount_bucket_counts = Counter(
+        bucket_key
+        for bucket_key in ('0_999', '1000_2499', '2500_4999', '5000_plus')
+        for crane in amount_source
+        if _matches_amount_bucket(crane, bucket_key)
+    )
+    facet_amount_bucket_options = [
+        _facet_option(bucket_key, amount_bucket_labels[bucket_key], amount_bucket_counts.get(bucket_key, 0), ref_amount_bucket, 'ref_amount_bucket')
+        for bucket_key in ('0_999', '1000_2499', '2500_4999', '5000_plus')
+        if amount_bucket_counts.get(bucket_key, 0) or ref_amount_bucket == bucket_key
+    ]
+
+    expiry_bucket_labels = {
+        'expired': 'Expired',
+        '0_30': '0-30 Days',
+        '31_90': '31-90 Days',
+        '90_plus': '90+ Days',
+    }
+    expiry_source = _apply_refinements(primary_filtered_records, skip='ref_expiry_bucket')
+    expiry_bucket_counts = Counter(
+        _expiry_bucket_value(crane)
+        for crane in expiry_source
+        if _expiry_bucket_value(crane)
+    )
+    facet_expiry_bucket_options = [
+        _facet_option(bucket_key, expiry_bucket_labels[bucket_key], expiry_bucket_counts.get(bucket_key, 0), ref_expiry_bucket, 'ref_expiry_bucket')
+        for bucket_key in ('expired', '0_30', '31_90', '90_plus')
+        if expiry_bucket_counts.get(bucket_key, 0) or ref_expiry_bucket == bucket_key
+    ]
+
+    lg_source = _apply_refinements(primary_filtered_records, skip='ref_lg')
+    lg_counts = Counter(
+        (crane.lg or '').strip()
+        for crane in lg_source
+        if (crane.lg or '').strip()
+    )
+    facet_lg_options = [
+        _facet_option(value, value, count, ref_lg, 'ref_lg')
+        for value, count in lg_counts.most_common(20)
+    ]
+
+    selected_filter_chips = []
+    field_labels = dict(major_search_fields)
+
+    if primary_value:
+        selected_filter_chips.append({
+            'label': f"{field_labels.get(primary_field, primary_field.title())}: {primary_value}",
+            'remove_url': _build_query({'primary_value': None}),
+        })
+
+    if ref_kran_typ:
+        selected_filter_chips.append({
+            'label': f'Kran Typ: {ref_kran_typ}',
+            'remove_url': _build_query({'ref_kran_typ': None}),
+        })
+
+    if ref_status:
+        selected_filter_chips.append({
+            'label': f"Status: {status_labels.get(ref_status, ref_status.title())}",
+            'remove_url': _build_query({'ref_status': None}),
+        })
+
+    if ref_lizenz_year:
+        selected_filter_chips.append({
+            'label': f'Lizenz Year: {ref_lizenz_year}',
+            'remove_url': _build_query({'ref_lizenz_year': None}),
+        })
+
+    if ref_amount_bucket:
+        selected_filter_chips.append({
+            'label': f"Amount: {amount_bucket_labels.get(ref_amount_bucket, ref_amount_bucket)}",
+            'remove_url': _build_query({'ref_amount_bucket': None}),
+        })
+
+    if ref_expiry_bucket:
+        selected_filter_chips.append({
+            'label': f"Expiry: {expiry_bucket_labels.get(ref_expiry_bucket, ref_expiry_bucket)}",
+            'remove_url': _build_query({'ref_expiry_bucket': None}),
+        })
+
+    if ref_lg:
+        selected_filter_chips.append({
+            'label': f'LG: {ref_lg}',
+            'remove_url': _build_query({'ref_lg': None}),
+        })
+
+    has_refinements = bool(ref_kran_typ or ref_status or ref_lizenz_year or ref_amount_bucket or ref_expiry_bucket or ref_lg)
 
     # 📊 EXPORT CSV
     if request.GET.get('export') == 'true':
@@ -687,7 +1096,7 @@ def data(request):
             'Bezahlt bis Rg.erstellt', 'Servicemeldung', 'Amount', 'Status'
         ])
 
-        for crane in queryset:
+        for crane in filtered_records:
             if crane.is_terminated:
                 status_value = 'Terminated'
             else:
@@ -706,14 +1115,58 @@ def data(request):
         return response
 
     # 📄 Pagination AFTER export block
-    paginator = Paginator(queryset, page_size)
+    paginator = Paginator(filtered_records, page_size)
     page_obj = paginator.get_page(request.GET.get('page'))
     _attach_expiry_flag(page_obj.object_list)
+
+    export_params = request.GET.copy()
+    export_params.pop('page', None)
+    export_params['page_size'] = str(page_size)
+    export_params['export'] = 'true'
+    export_url = '?' + export_params.urlencode()
+
+    page_url_first = _build_query({'page': 1})
+    page_url_prev = _build_query({'page': page_obj.previous_page_number()}) if page_obj.has_previous() else ''
+    page_url_next = _build_query({'page': page_obj.next_page_number()}) if page_obj.has_next() else ''
+    page_url_last = _build_query({'page': page_obj.paginator.num_pages}) if page_obj.has_next() else ''
+
+    showing_start = page_obj.start_index() if paginator.count else 0
+    showing_end = page_obj.end_index() if paginator.count else 0
+
+    reset_url = f'?page_size={page_size}'
 
     return render(request, 'data_retrival.html', {
         'page_obj': page_obj,
         'page_size': page_size,
         'page_size_options': (10, 50, 100),
+        'primary_field': primary_field,
+        'primary_value': primary_value,
+        'major_search_fields': major_search_fields,
+        'ref_kran_typ': ref_kran_typ,
+        'ref_status': ref_status,
+        'ref_lizenz_year': ref_lizenz_year,
+        'ref_amount_bucket': ref_amount_bucket,
+        'ref_expiry_bucket': ref_expiry_bucket,
+        'ref_lg': ref_lg,
+        'facet_kran_typ_options': facet_kran_typ_options,
+        'facet_status_options': facet_status_options,
+        'facet_lizenz_year_options': facet_lizenz_year_options,
+        'facet_amount_bucket_options': facet_amount_bucket_options,
+        'facet_expiry_bucket_options': facet_expiry_bucket_options,
+        'facet_lg_options': facet_lg_options,
+        'customer_suggestions': customer_suggestions,
+        'selected_filter_chips': selected_filter_chips,
+        'has_refinements': has_refinements,
+        'filtered_total': len(filtered_records),
+        'total_records': total_records,
+        'showing_start': showing_start,
+        'showing_end': showing_end,
+        'export_url': export_url,
+        'page_url_first': page_url_first,
+        'page_url_prev': page_url_prev,
+        'page_url_next': page_url_next,
+        'page_url_last': page_url_last,
+        'reset_url': reset_url,
     })
 
    
@@ -841,19 +1294,27 @@ def search_rg(request):
                 messages.error(request, 'Invalid payment date format. Use YYYY-MM-DD.')
                 return redirect(redirect_url)
 
-            expected_next_due = _next_due_preview_date(current_due, expiry_date)
-            if not expected_next_due:
-                return redirect(redirect_url)
+            server_today = min(timezone.localdate(), date.today())
+            client_today_str = request.POST.get('client_today', '').strip()
+            client_today = None
+            if client_today_str:
+                try:
+                    client_today = datetime.strptime(client_today_str, '%Y-%m-%d').date()
+                except ValueError:
+                    client_today = None
 
-            if actual_paid_date.year != expected_next_due.year:
+            max_allowed_date = min(server_today, client_today) if client_today else server_today
+
+            if actual_paid_date > max_allowed_date:
                 messages.error(
                     request,
-                    f'ID {crane.id}: payment date year must be {expected_next_due.year} (next due year only).'
+                    f'ID {crane.id}: actual payment date cannot be in the future.'
                 )
                 return redirect(redirect_url)
 
             _, next_due, _ = _mark_due_paid_in_background(crane, actual_paid_date=actual_paid_date)
             if not next_due:
+                messages.error(request, f'ID {crane.id}: payment was not applied. Future dates are not allowed.')
                 return redirect(redirect_url)
 
             _log_change(
@@ -971,41 +1432,6 @@ def search_paid(request):
 def update_rg(request):
     """Update expiry date or mark current due year paid for selected crane rows."""
     _sync_expired_cranes()
-    query = request.GET.get('q', '').strip()
-    queryset = _with_termination_flag(Crane.objects.all()).order_by('id')
-
-    if query:
-        query_lower = query.lower()
-        queryset = queryset.annotate(
-            search_id=Cast('id', output_field=CharField()),
-            search_servicemeldung=Cast('servicemeldung', output_field=CharField()),
-            search_amount=Cast('amount', output_field=CharField()),
-        ).filter(
-            Q(search_id__icontains=query)
-            | Q(kran_typ__icontains=query)
-            | Q(fabrik_nr__icontains=query)
-            | Q(kunde__icontains=query)
-            | Q(lg__icontains=query)
-            | Q(kundenummer__icontains=query)
-            | Q(version__icontains=query)
-            | Q(serien_nr__icontains=query)
-            | Q(tel_nr__icontains=query)
-            | Q(ip__icontains=query)
-            | Q(rueckmeldung__icontains=query)
-            | Q(it_nr__icontains=query)
-            | Q(kundenkran__icontains=query)
-            | Q(lizenz_ja__icontains=query)
-            | Q(lizenzdatum__icontains=query)
-            | Q(bezahlt_bis_rg_erstellt__icontains=query)
-            | Q(search_servicemeldung__icontains=query)
-            | Q(search_amount__icontains=query)
-        )
-
-        if query_lower in ('active', 'inactive'):
-            queryset = queryset.filter(is_active=(query_lower == 'active'))
-
-        if query_lower == 'terminated':
-            queryset = queryset.filter(is_terminated=True)
 
     if request.method == 'POST':
         action = request.POST.get('action', 'update_expiry').strip()
@@ -1048,19 +1474,27 @@ def update_rg(request):
                 messages.error(request, 'Invalid payment date format. Use YYYY-MM-DD.')
                 return redirect(redirect_url)
 
-            expected_next_due = _next_due_preview_date(current_due, expiry_date)
-            if not expected_next_due:
-                return redirect(redirect_url)
+            server_today = min(timezone.localdate(), date.today())
+            client_today_str = request.POST.get('client_today', '').strip()
+            client_today = None
+            if client_today_str:
+                try:
+                    client_today = datetime.strptime(client_today_str, '%Y-%m-%d').date()
+                except ValueError:
+                    client_today = None
 
-            if actual_paid_date.year != expected_next_due.year:
+            max_allowed_date = min(server_today, client_today) if client_today else server_today
+
+            if actual_paid_date > max_allowed_date:
                 messages.error(
                     request,
-                    f'ID {crane.id}: payment date year must be {expected_next_due.year} (next due year only).'
+                    f'ID {crane.id}: actual payment date cannot be in the future.'
                 )
                 return redirect(redirect_url)
 
             _, next_due, _ = _mark_due_paid_in_background(crane, actual_paid_date=actual_paid_date)
             if not next_due:
+                messages.error(request, f'ID {crane.id}: payment was not applied. Future dates are not allowed.')
                 return redirect(redirect_url)
 
             _log_change(
@@ -1092,13 +1526,377 @@ def update_rg(request):
         )
         return redirect(redirect_url)
 
-    paginator = Paginator(queryset, 10)
+    queryset = list(_with_termination_flag(Crane.objects.all()).order_by('id'))
+    _attach_expiry_flag(queryset)
+    today_value = date.today()
+
+    major_search_fields = [
+        ('kunde', 'Kunde'),
+        ('kran_typ', 'Kran Typ'),
+        ('fabrik_nr', 'Fabrik Nr'),
+        ('serien_nr', 'Serien Nr'),
+        ('it_nr', 'IT Nr'),
+        ('status', 'Status'),
+    ]
+    allowed_primary_fields = {field for field, _ in major_search_fields}
+
+    primary_field = request.GET.get('primary_field', 'kunde').strip()
+    if primary_field not in allowed_primary_fields:
+        primary_field = 'kunde'
+
+    primary_value = request.GET.get('primary_value', '').strip()
+    legacy_query = request.GET.get('q', '').strip()
+    if legacy_query and not primary_value:
+        primary_value = legacy_query
+
+    ref_kran_typ = request.GET.get('ref_kran_typ', '').strip()
+    ref_status = request.GET.get('ref_status', '').strip().lower()
+    if ref_status not in {'', 'active', 'inactive', 'terminated'}:
+        ref_status = ''
+
+    ref_lizenz_year = request.GET.get('ref_lizenz_year', '').strip()
+    if ref_lizenz_year and (not ref_lizenz_year.isdigit() or len(ref_lizenz_year) != 4):
+        ref_lizenz_year = ''
+
+    ref_amount_bucket = request.GET.get('ref_amount_bucket', '').strip()
+    if ref_amount_bucket not in {'', '0_999', '1000_2499', '2500_4999', '5000_plus'}:
+        ref_amount_bucket = ''
+
+    ref_expiry_bucket = request.GET.get('ref_expiry_bucket', '').strip()
+    if ref_expiry_bucket not in {'', 'expired', '0_30', '31_90', '90_plus'}:
+        ref_expiry_bucket = ''
+
+    ref_lg = request.GET.get('ref_lg', '').strip()
+
+    page_size_raw = request.GET.get('page_size', '10').strip()
+    try:
+        page_size = int(page_size_raw)
+    except (TypeError, ValueError):
+        page_size = 10
+
+    if page_size not in (10, 50, 100):
+        page_size = 10
+
+    def _status_value(crane):
+        if getattr(crane, 'is_terminated', False):
+            return 'terminated'
+        return 'active' if crane.is_active else 'inactive'
+
+    def _lizenz_year_value(crane):
+        parsed_date = _parse_iso_date(crane.lizenzdatum)
+        return parsed_date.year if parsed_date else None
+
+    def _matches_amount_bucket(crane, bucket):
+        amount_value = crane.amount if crane.amount is not None else 0
+        if bucket == '0_999':
+            return 0 <= amount_value <= 999
+        if bucket == '1000_2499':
+            return 1000 <= amount_value <= 2499
+        if bucket == '2500_4999':
+            return 2500 <= amount_value <= 4999
+        if bucket == '5000_plus':
+            return amount_value >= 5000
+        return True
+
+    def _expiry_bucket_value(crane):
+        expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+        if not expiry_date:
+            return None
+
+        days_left = (expiry_date - today_value).days
+        if days_left < 0:
+            return 'expired'
+        if days_left <= 30:
+            return '0_30'
+        if days_left <= 90:
+            return '31_90'
+        return '90_plus'
+
+    def _apply_primary_filter(records):
+        if not primary_value:
+            return list(records)
+
+        needle = primary_value.lower()
+
+        if primary_field == 'status':
+            return [
+                crane for crane in records
+                if _status_value(crane) == needle
+            ]
+
+        return [
+            crane for crane in records
+            if needle in str(getattr(crane, primary_field, '') or '').lower()
+        ]
+
+    def _apply_refinements(records, skip=None):
+        filtered_records = list(records)
+
+        if ref_kran_typ and skip != 'ref_kran_typ':
+            filtered_records = [
+                crane for crane in filtered_records
+                if (crane.kran_typ or '').strip() == ref_kran_typ
+            ]
+
+        if ref_status and skip != 'ref_status':
+            filtered_records = [
+                crane for crane in filtered_records
+                if _status_value(crane) == ref_status
+            ]
+
+        if ref_lizenz_year and skip != 'ref_lizenz_year':
+            selected_year = int(ref_lizenz_year)
+            filtered_records = [
+                crane for crane in filtered_records
+                if _lizenz_year_value(crane) == selected_year
+            ]
+
+        if ref_amount_bucket and skip != 'ref_amount_bucket':
+            filtered_records = [
+                crane for crane in filtered_records
+                if _matches_amount_bucket(crane, ref_amount_bucket)
+            ]
+
+        if ref_expiry_bucket and skip != 'ref_expiry_bucket':
+            filtered_records = [
+                crane for crane in filtered_records
+                if _expiry_bucket_value(crane) == ref_expiry_bucket
+            ]
+
+        if ref_lg and skip != 'ref_lg':
+            filtered_records = [
+                crane for crane in filtered_records
+                if (crane.lg or '').strip().lower() == ref_lg.lower()
+            ]
+
+        return filtered_records
+
+    def _build_query(updates=None, remove_keys=None):
+        params = request.GET.copy()
+        params.pop('page', None)
+        params.pop('q', None)
+        if 'page_size' not in params:
+            params['page_size'] = str(page_size)
+
+        if remove_keys:
+            for key in remove_keys:
+                params.pop(key, None)
+
+        if updates:
+            for key, value in updates.items():
+                if value is None or str(value).strip() == '':
+                    params.pop(key, None)
+                else:
+                    params[key] = str(value)
+
+        query_string = params.urlencode()
+        return f'?{query_string}' if query_string else '?'
+
+    total_records = len(queryset)
+    primary_filtered_records = _apply_primary_filter(queryset)
+    filtered_records = _apply_refinements(primary_filtered_records)
+
+    customer_name_counts = Counter(
+        (crane.kunde or '').strip()
+        for crane in primary_filtered_records
+        if (crane.kunde or '').strip()
+    )
+    if primary_field == 'kunde' and primary_value:
+        customer_suggestions = [
+            customer_name
+            for customer_name, _ in customer_name_counts.most_common()
+            if primary_value.lower() in customer_name.lower()
+        ][:12]
+    else:
+        customer_suggestions = [
+            customer_name
+            for customer_name, _ in customer_name_counts.most_common(12)
+        ]
+
+    def _facet_option(value, label, count, selected_value, param_name):
+        return {
+            'value': str(value),
+            'label': label,
+            'count': count,
+            'active': str(selected_value) == str(value),
+            'url': _build_query({param_name: value}),
+        }
+
+    kran_typ_source = _apply_refinements(primary_filtered_records, skip='ref_kran_typ')
+    kran_typ_counts = Counter(
+        (crane.kran_typ or '').strip()
+        for crane in kran_typ_source
+        if (crane.kran_typ or '').strip()
+    )
+    facet_kran_typ_options = [
+        _facet_option(value, value, count, ref_kran_typ, 'ref_kran_typ')
+        for value, count in kran_typ_counts.most_common(25)
+    ]
+
+    status_source = _apply_refinements(primary_filtered_records, skip='ref_status')
+    status_counts = Counter(_status_value(crane) for crane in status_source)
+    status_labels = {
+        'active': 'Active',
+        'inactive': 'Inactive',
+        'terminated': 'Terminated',
+    }
+    facet_status_options = [
+        _facet_option(status_key, status_labels[status_key], status_counts.get(status_key, 0), ref_status, 'ref_status')
+        for status_key in ('active', 'inactive', 'terminated')
+        if status_counts.get(status_key, 0) or ref_status == status_key
+    ]
+
+    lizenz_year_source = _apply_refinements(primary_filtered_records, skip='ref_lizenz_year')
+    lizenz_year_counts = Counter(
+        _lizenz_year_value(crane)
+        for crane in lizenz_year_source
+        if _lizenz_year_value(crane) is not None
+    )
+    facet_lizenz_year_options = [
+        _facet_option(year_value, str(year_value), lizenz_year_counts.get(year_value, 0), ref_lizenz_year, 'ref_lizenz_year')
+        for year_value in sorted(lizenz_year_counts.keys(), reverse=True)
+    ]
+
+    amount_bucket_labels = {
+        '0_999': 'EUR 0 - 999',
+        '1000_2499': 'EUR 1000 - 2499',
+        '2500_4999': 'EUR 2500 - 4999',
+        '5000_plus': 'EUR 5000+',
+    }
+    amount_source = _apply_refinements(primary_filtered_records, skip='ref_amount_bucket')
+    amount_bucket_counts = Counter(
+        bucket_key
+        for bucket_key in ('0_999', '1000_2499', '2500_4999', '5000_plus')
+        for crane in amount_source
+        if _matches_amount_bucket(crane, bucket_key)
+    )
+    facet_amount_bucket_options = [
+        _facet_option(bucket_key, amount_bucket_labels[bucket_key], amount_bucket_counts.get(bucket_key, 0), ref_amount_bucket, 'ref_amount_bucket')
+        for bucket_key in ('0_999', '1000_2499', '2500_4999', '5000_plus')
+        if amount_bucket_counts.get(bucket_key, 0) or ref_amount_bucket == bucket_key
+    ]
+
+    expiry_bucket_labels = {
+        'expired': 'Expired',
+        '0_30': '0-30 Days',
+        '31_90': '31-90 Days',
+        '90_plus': '90+ Days',
+    }
+    expiry_source = _apply_refinements(primary_filtered_records, skip='ref_expiry_bucket')
+    expiry_bucket_counts = Counter(
+        _expiry_bucket_value(crane)
+        for crane in expiry_source
+        if _expiry_bucket_value(crane)
+    )
+    facet_expiry_bucket_options = [
+        _facet_option(bucket_key, expiry_bucket_labels[bucket_key], expiry_bucket_counts.get(bucket_key, 0), ref_expiry_bucket, 'ref_expiry_bucket')
+        for bucket_key in ('expired', '0_30', '31_90', '90_plus')
+        if expiry_bucket_counts.get(bucket_key, 0) or ref_expiry_bucket == bucket_key
+    ]
+
+    lg_source = _apply_refinements(primary_filtered_records, skip='ref_lg')
+    lg_counts = Counter(
+        (crane.lg or '').strip()
+        for crane in lg_source
+        if (crane.lg or '').strip()
+    )
+    facet_lg_options = [
+        _facet_option(value, value, count, ref_lg, 'ref_lg')
+        for value, count in lg_counts.most_common(20)
+    ]
+
+    selected_filter_chips = []
+    field_labels = dict(major_search_fields)
+
+    if primary_value:
+        selected_filter_chips.append({
+            'label': f"{field_labels.get(primary_field, primary_field.title())}: {primary_value}",
+            'remove_url': _build_query({'primary_value': None}),
+        })
+
+    if ref_kran_typ:
+        selected_filter_chips.append({
+            'label': f'Kran Typ: {ref_kran_typ}',
+            'remove_url': _build_query({'ref_kran_typ': None}),
+        })
+
+    if ref_status:
+        selected_filter_chips.append({
+            'label': f"Status: {status_labels.get(ref_status, ref_status.title())}",
+            'remove_url': _build_query({'ref_status': None}),
+        })
+
+    if ref_lizenz_year:
+        selected_filter_chips.append({
+            'label': f'Lizenz Year: {ref_lizenz_year}',
+            'remove_url': _build_query({'ref_lizenz_year': None}),
+        })
+
+    if ref_amount_bucket:
+        selected_filter_chips.append({
+            'label': f"Amount: {amount_bucket_labels.get(ref_amount_bucket, ref_amount_bucket)}",
+            'remove_url': _build_query({'ref_amount_bucket': None}),
+        })
+
+    if ref_expiry_bucket:
+        selected_filter_chips.append({
+            'label': f"Expiry: {expiry_bucket_labels.get(ref_expiry_bucket, ref_expiry_bucket)}",
+            'remove_url': _build_query({'ref_expiry_bucket': None}),
+        })
+
+    if ref_lg:
+        selected_filter_chips.append({
+            'label': f'LG: {ref_lg}',
+            'remove_url': _build_query({'ref_lg': None}),
+        })
+
+    has_refinements = bool(ref_kran_typ or ref_status or ref_lizenz_year or ref_amount_bucket or ref_expiry_bucket or ref_lg)
+
+    paginator = Paginator(filtered_records, page_size)
     page_obj = paginator.get_page(request.GET.get('page'))
     _attach_expiry_flag(page_obj.object_list)
 
+    page_url_first = _build_query({'page': 1})
+    page_url_prev = _build_query({'page': page_obj.previous_page_number()}) if page_obj.has_previous() else ''
+    page_url_next = _build_query({'page': page_obj.next_page_number()}) if page_obj.has_next() else ''
+    page_url_last = _build_query({'page': page_obj.paginator.num_pages}) if page_obj.has_next() else ''
+
+    showing_start = page_obj.start_index() if paginator.count else 0
+    showing_end = page_obj.end_index() if paginator.count else 0
+
+    reset_url = f'?page_size={page_size}'
+
     return render(request, 'update.html', {
         'page_obj': page_obj,
-        'search_query': query
+        'page_size': page_size,
+        'page_size_options': (10, 50, 100),
+        'primary_field': primary_field,
+        'primary_value': primary_value,
+        'major_search_fields': major_search_fields,
+        'ref_kran_typ': ref_kran_typ,
+        'ref_status': ref_status,
+        'ref_lizenz_year': ref_lizenz_year,
+        'ref_amount_bucket': ref_amount_bucket,
+        'ref_expiry_bucket': ref_expiry_bucket,
+        'ref_lg': ref_lg,
+        'facet_kran_typ_options': facet_kran_typ_options,
+        'facet_status_options': facet_status_options,
+        'facet_lizenz_year_options': facet_lizenz_year_options,
+        'facet_amount_bucket_options': facet_amount_bucket_options,
+        'facet_expiry_bucket_options': facet_expiry_bucket_options,
+        'facet_lg_options': facet_lg_options,
+        'customer_suggestions': customer_suggestions,
+        'selected_filter_chips': selected_filter_chips,
+        'has_refinements': has_refinements,
+        'filtered_total': len(filtered_records),
+        'total_records': total_records,
+        'showing_start': showing_start,
+        'showing_end': showing_end,
+        'page_url_first': page_url_first,
+        'page_url_prev': page_url_prev,
+        'page_url_next': page_url_next,
+        'page_url_last': page_url_last,
+        'reset_url': reset_url,
     })
 
 
@@ -1239,6 +2037,58 @@ def terminate_crane(request, pk):
         details=f'Lease terminated early. Reason: {reason or "(none)"}.',
     )
     return redirect('update_rg')
+
+
+@login_required(login_url='login')
+@never_cache
+def renew_termination(request, pk):
+    """Renew a terminated crane by setting a new expiry date and removing termination status."""
+    if request.method != 'POST':
+        return redirect('terminations_list')
+
+    termination = get_object_or_404(Termination.objects.select_related('crane'), pk=pk)
+    crane = termination.crane
+    new_expiry = request.POST.get('bezahlt_bis_rg_erstellt', '').strip()
+
+    if not new_expiry:
+        messages.error(request, f'ID {crane.id}: please provide a new Bezahlt bis Rg.erstellt date.')
+        return redirect('terminations_list')
+
+    try:
+        parsed_expiry = datetime.strptime(new_expiry, '%Y-%m-%d').date()
+    except ValueError:
+        messages.error(request, f'ID {crane.id}: invalid date format. Use YYYY-MM-DD.')
+        return redirect('terminations_list')
+
+    today_value = timezone.localdate()
+    if parsed_expiry < today_value:
+        messages.error(request, f'ID {crane.id}: renewal date cannot be in the past.')
+        return redirect('terminations_list')
+
+    start_date = _parse_iso_date(crane.lizenzdatum or termination.original_lizenzdatum)
+    if start_date and parsed_expiry <= start_date:
+        messages.error(request, f'ID {crane.id}: renewal date must be after Lizenzdatum.')
+        return redirect('terminations_list')
+
+    current_due = _current_due_date_for_crane(crane)
+    if current_due and parsed_expiry <= current_due:
+        messages.error(request, f'ID {crane.id}: renewal date must be after the current due date {current_due}.')
+        return redirect('terminations_list')
+
+    crane.bezahlt_bis_rg_erstellt = parsed_expiry.strftime('%Y-%m-%d')
+    crane.is_active = True
+    crane.save(update_fields=['bezahlt_bis_rg_erstellt', 'is_active'])
+
+    termination.delete()
+
+    _log_change(
+        request,
+        'renew_crane',
+        crane=crane,
+        details=f'Lease renewed from terminated state. New Bezahlt bis Rg.erstellt set to {parsed_expiry}.',
+    )
+
+    return redirect('terminations_list')
 
 
 @login_required(login_url='login')

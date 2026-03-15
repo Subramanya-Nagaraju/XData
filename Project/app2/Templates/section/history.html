@@ -103,6 +103,12 @@
             font-weight: 600;
             color: #333;
         }
+
+        #historyTableSection.is-loading {
+            opacity: 0.6;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
     </style>
 </head>
 <body>
@@ -110,6 +116,7 @@
 <div class="container">
     <h2>Change History</h2>
 
+    <div id="historyTableSection">
     <div class="table-wrapper">
         <table>
             <thead>
@@ -154,7 +161,59 @@
             <a href="?page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
         {% endif %}
     </div>
+    </div>
 </div>
+
+<script>
+function fetchHistoryTableSection(url) {
+    var section = document.getElementById('historyTableSection');
+    if (!section) {
+        window.location.href = url;
+        return;
+    }
+
+    var targetUrl = new URL(url, window.location.origin);
+    section.classList.add('is-loading');
+
+    fetch(targetUrl.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function (response) {
+        if (!response.ok) {
+            throw new Error('Request failed');
+        }
+        return response.text();
+    })
+    .then(function (html) {
+        var parsed = new DOMParser().parseFromString(html, 'text/html');
+        var nextSection = parsed.getElementById('historyTableSection');
+        if (!nextSection) {
+            throw new Error('Missing section');
+        }
+
+        section.innerHTML = nextSection.innerHTML;
+        window.history.replaceState({}, '', targetUrl.pathname + targetUrl.search);
+    })
+    .catch(function () {
+        window.location.href = targetUrl.toString();
+    })
+    .finally(function () {
+        section.classList.remove('is-loading');
+    });
+}
+
+document.addEventListener('click', function (event) {
+    var link = event.target.closest('#historyTableSection .pagination a');
+    if (!link) {
+        return;
+    }
+
+    event.preventDefault();
+    fetchHistoryTableSection(link.href);
+});
+</script>
 
 </body>
 </html>

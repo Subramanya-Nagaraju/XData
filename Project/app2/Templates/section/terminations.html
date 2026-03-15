@@ -113,6 +113,55 @@
 		.pagination a:hover {
 			background: #ddd;
 		}
+
+		.modal-overlay {
+			display: none;
+			position: fixed;
+			inset: 0;
+			background: rgba(0, 0, 0, 0.55);
+			z-index: 9999;
+			justify-content: center;
+			align-items: center;
+		}
+
+		.modal-card {
+			background: #fff;
+			border-radius: 10px;
+			padding: 28px 24px;
+			width: 420px;
+			max-width: 95vw;
+			box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+		}
+
+		.modal-label {
+			display: block;
+			font-weight: 600;
+			font-size: 13px;
+			color: #333;
+			margin-bottom: 6px;
+		}
+
+		.modal-input {
+			width: 100%;
+			padding: 10px 12px;
+			border: 1px solid #ccc;
+			border-radius: 6px;
+			font-size: 14px;
+			margin-bottom: 8px;
+		}
+
+		.modal-actions {
+			display: flex;
+			gap: 10px;
+			justify-content: flex-end;
+			margin-top: 18px;
+		}
+
+		#terminationTableSection.is-loading {
+			opacity: 0.6;
+			pointer-events: none;
+			transition: opacity 0.2s ease;
+		}
 	</style>
 </head>
 <body>
@@ -132,6 +181,7 @@
 		<a href="{% url 'update_rg' %}" class="btn">&larr; Back to Update</a>
 	</div>
 
+	<div id="terminationTableSection">
 	<div class="table-wrapper">
 		<table>
 			<thead>
@@ -158,6 +208,7 @@
 					<th>Terminated At</th>
 					<th>Terminated By</th>
 					<th>Reason</th>
+					<th>Action</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -185,10 +236,16 @@
 					<td>{{ t.terminated_at|date:"Y-m-d H:i" }}</td>
 					<td>{{ t.terminated_by.username|default:"&mdash;" }}</td>
 					<td class="reason-cell">{{ t.termination_reason|default:"&mdash;" }}</td>
+					<td>
+						<button type="button" class="btn"
+							onclick="openRenewModal('{{ t.id }}', '{{ t.crane.id }}', '{{ t.crane.kunde|escapejs }}', '{{ t.original_expiry_date|default:''|escapejs }}')">
+							Renew
+						</button>
+					</td>
 				</tr>
 				{% empty %}
 				<tr>
-					<td colspan="22">No termination records found.</td>
+					<td colspan="23">No termination records found.</td>
 				</tr>
 				{% endfor %}
 			</tbody>
@@ -208,7 +265,122 @@
 			<a href="?page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
 		{% endif %}
 	</div>
+	</div>
 </div>
+
+<div id="renewModal" class="modal-overlay">
+	<div class="modal-card">
+		<h3 style="margin:0 0 8px 0; font-size:18px; color:#222;">Renew Terminated Crane</h3>
+		<p id="renewModalText" style="margin:0 0 18px 0; font-size:13px; color:#555;"></p>
+
+		<label for="renewDateInput" class="modal-label">New Bezahlt bis Rg.erstellt</label>
+		<input type="date" id="renewDateInput" class="modal-input">
+		<p style="font-size:11px; color:#888; margin:0;">
+			Choose the renewed contract expiry date. Once renewed, the crane will leave this page and appear again across the other pages.
+		</p>
+
+		<div class="modal-actions">
+			<button type="button" class="btn" style="background:#888;" onclick="closeRenewModal()">Cancel</button>
+			<button type="button" class="btn" onclick="submitRenewal()">Confirm Renewal</button>
+		</div>
+	</div>
+</div>
+
+<form id="renewForm" method="post" style="display:none;">
+	{% csrf_token %}
+	<input type="hidden" name="bezahlt_bis_rg_erstellt" id="renewFormDate">
+</form>
+
+<script>
+var renewTodayIso = new Date().toISOString().split('T')[0];
+
+function openRenewModal(terminationId, craneId, kunde, currentExpiry) {
+	var renewForm = document.getElementById('renewForm');
+	renewForm.action = '/renew/' + terminationId + '/';
+
+	var renewDateInput = document.getElementById('renewDateInput');
+	renewDateInput.min = renewTodayIso;
+	renewDateInput.value = currentExpiry && currentExpiry >= renewTodayIso ? currentExpiry : renewTodayIso;
+
+	document.getElementById('renewModalText').textContent = 'Crane ID ' + craneId + ' | Client: ' + kunde + (currentExpiry ? ' | Current expiry: ' + currentExpiry : '');
+	document.getElementById('renewModal').style.display = 'flex';
+}
+
+function closeRenewModal() {
+	document.getElementById('renewModal').style.display = 'none';
+}
+
+function submitRenewal() {
+	var renewDateInput = document.getElementById('renewDateInput');
+	if (!renewDateInput.value) {
+		alert('Please select the new Bezahlt bis Rg.erstellt date.');
+		return;
+	}
+
+	if (renewDateInput.value < renewTodayIso) {
+		alert('Renewal date cannot be in the past.');
+		return;
+	}
+
+	document.getElementById('renewFormDate').value = renewDateInput.value;
+	document.getElementById('renewForm').submit();
+}
+
+document.getElementById('renewModal').addEventListener('click', function (event) {
+	if (event.target === this) {
+		closeRenewModal();
+	}
+});
+
+function fetchTerminationTableSection(url) {
+	var section = document.getElementById('terminationTableSection');
+	if (!section) {
+		window.location.href = url;
+		return;
+	}
+
+	var targetUrl = new URL(url, window.location.origin);
+	section.classList.add('is-loading');
+
+	fetch(targetUrl.toString(), {
+		headers: {
+			'X-Requested-With': 'XMLHttpRequest'
+		}
+	})
+	.then(function (response) {
+		if (!response.ok) {
+			throw new Error('Request failed');
+		}
+		return response.text();
+	})
+	.then(function (html) {
+		var parsed = new DOMParser().parseFromString(html, 'text/html');
+		var nextSection = parsed.getElementById('terminationTableSection');
+		if (!nextSection) {
+			throw new Error('Missing section');
+		}
+
+		section.innerHTML = nextSection.innerHTML;
+		window.history.replaceState({}, '', targetUrl.pathname + targetUrl.search);
+	})
+	.catch(function () {
+		window.location.href = targetUrl.toString();
+	})
+	.finally(function () {
+		section.classList.remove('is-loading');
+	});
+}
+
+document.addEventListener('click', function (event) {
+	var link = event.target.closest('#terminationTableSection .pagination a');
+	if (!link) {
+		return;
+	}
+
+	event.preventDefault();
+	fetchTerminationTableSection(link.href);
+});
+</script>
 
 </body>
 </html>

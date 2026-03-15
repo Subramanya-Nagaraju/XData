@@ -240,6 +240,12 @@
             font-weight: 600;
             color: #333;
         }
+
+        #searchPaidTableSection.is-loading {
+            opacity: 0.6;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
     </style>
 </head>
 <body>
@@ -248,6 +254,7 @@
 
 <h2> Search Paid "Bezahlt bis Rg.erstellt"</h2>
 
+<div id="searchPaidTableSection">
 <!-- Date Filter Section -->
 <div class="filter-section">
     <form method="GET">
@@ -392,8 +399,76 @@
         <a href="?page={{ page_obj.paginator.num_pages }}&year={{ selected_year }}&month={{ selected_month }}&day={{ selected_day }}">Last &raquo;</a>
     {% endif %}
 </div>
+</div>
 
 </div>
+
+<script>
+function fetchSearchPaidTable(url) {
+    var section = document.getElementById('searchPaidTableSection');
+    if (!section) {
+        window.location.href = url;
+        return;
+    }
+
+    var targetUrl = new URL(url, window.location.origin);
+    section.classList.add('is-loading');
+
+    fetch(targetUrl.toString(), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function (response) {
+        if (!response.ok) {
+            throw new Error('Request failed');
+        }
+        return response.text();
+    })
+    .then(function (html) {
+        var parsed = new DOMParser().parseFromString(html, 'text/html');
+        var nextSection = parsed.getElementById('searchPaidTableSection');
+        if (!nextSection) {
+            throw new Error('Missing section');
+        }
+
+        section.innerHTML = nextSection.innerHTML;
+        window.history.replaceState({}, '', targetUrl.pathname + targetUrl.search);
+    })
+    .catch(function () {
+        window.location.href = targetUrl.toString();
+    })
+    .finally(function () {
+        section.classList.remove('is-loading');
+    });
+}
+
+document.addEventListener('submit', function (event) {
+    var form = event.target.closest('#searchPaidTableSection form');
+    if (!form) {
+        return;
+    }
+
+    var method = (form.getAttribute('method') || 'get').toLowerCase();
+    if (method !== 'get') {
+        return;
+    }
+
+    event.preventDefault();
+    var params = new URLSearchParams(new FormData(form));
+    fetchSearchPaidTable(window.location.pathname + '?' + params.toString());
+});
+
+document.addEventListener('click', function (event) {
+    var link = event.target.closest('#searchPaidTableSection .pagination a');
+    if (!link) {
+        return;
+    }
+
+    event.preventDefault();
+    fetchSearchPaidTable(link.href);
+});
+</script>
 
 </body>
 </html>
