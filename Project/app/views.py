@@ -214,21 +214,8 @@ def _paid_due_dates_for_crane(crane):
     if not initial_due_date:
         return []
 
-    inferred_last_paid_due = initial_due_date + relativedelta(years=-1)
-
-    current_due = _current_due_date_for_crane(crane)
-    last_paid_due = current_due + relativedelta(years=-1) if current_due else inferred_last_paid_due
-
-    if last_paid_due < inferred_last_paid_due:
-        return []
-
-    paid_dates = []
-    cursor = inferred_last_paid_due
-    while cursor <= last_paid_due:
-        paid_dates.append(cursor)
-        cursor = cursor + relativedelta(years=1)
-
-    return paid_dates
+    # Paid reference is always one year before the due date stored on the crane row.
+    return [initial_due_date + relativedelta(years=-1)]
 
 
 def _paid_years_for_crane(crane):
@@ -388,7 +375,7 @@ def _get_paid_filtered_queryset(request):
         sort_by = 'id'
 
     for crane in queryset:
-        crane.display_due_date = _due_display_date_for_crane(crane)
+        crane.display_due_date = crane.bezahlt_bis_rg_erstellt
         crane.last_paid_year = _last_paid_year_for_crane(crane)
 
     queryset.sort(key=lambda crane: crane.id)

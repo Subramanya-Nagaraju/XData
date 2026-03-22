@@ -227,26 +227,25 @@
             background: #e8e8e8 !important;
         }
 
-        .status-btn {
+        .status-indicator {
             padding: 6px 12px;
             border: none;
             border-radius: 4px;
-            cursor: pointer;
             font-weight: bold;
-            transition: all 0.3s;
+            display: inline-block;
         }
 
-        .status-btn.active {
+        .status-indicator.active {
             background: #28a745;
             color: white;
         }
 
-        .status-btn.active.warning {
+        .status-indicator.active.warning {
             background: #ffc107;
             color: #333;
         }
 
-        .status-btn.inactive {
+        .status-indicator.inactive {
             background: #dc3545;
             color: white;
         }
@@ -322,38 +321,6 @@
             return cookieValue ? cookieValue.split('=')[1] : '';
         }
 
-        function toggleStatus(pk, btn) {
-            fetch(`/toggle_status/${pk}/`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': getCsrfToken(),
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const row = btn.closest('tr');
-                    if (data.is_active) {
-                        btn.classList.remove('inactive');
-                        btn.classList.add('active');
-                        btn.textContent = 'Active';
-                        btn.title = '';
-                        row.classList.remove('inactive');
-                    } else {
-                        btn.classList.remove('active');
-                        btn.classList.add('inactive');
-                        btn.textContent = 'Inactive';
-                        btn.title = data.is_terminated ? 'This client is terminated' : '';
-                        row.classList.add('inactive');
-                    }
-                } else if (data.error) {
-                    alert(data.error);
-                }
-            })
-            .catch(error => console.error('Error:', error));
-        }
-
         function escapeHtml(text) {
             var map = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'};
             return text.replace(/[&<>"']/g, function(m) { return map[m]; });
@@ -410,13 +377,13 @@
                         console.log('Updating row UI...');
                         row.classList.add('inactive');
                         
-                        const statusBtn = row.querySelector('.status-btn');
-                        if (statusBtn) {
-                            statusBtn.classList.remove('active', 'warning');
-                            statusBtn.classList.add('inactive');
-                            statusBtn.textContent = 'Inactive';
-                            statusBtn.disabled = true;
-                            console.log('Updated status button');
+                        const statusIndicator = row.querySelector('.status-indicator');
+                        if (statusIndicator) {
+                            statusIndicator.classList.remove('active', 'warning');
+                            statusIndicator.classList.add('inactive');
+                            statusIndicator.textContent = 'Inactive';
+                            statusIndicator.title = 'This client is terminated';
+                            console.log('Updated status indicator');
                         }
                         
                         // Replace the last cell (terminate button) with a dash
@@ -757,12 +724,11 @@
                         <td>{{ kran.servicemeldung }}</td>
                         <td>{{ kran.amount }}</td>
                         <td>
-                            <button
-                                class="status-btn {% if kran.is_active %}active{% if kran.warning_due_date %} warning{% endif %}{% else %}inactive{% endif %}"
-                                title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif kran.is_active and kran.warning_due_date %}Due date has passed{% endif %}"
-                                onclick="toggleStatus({{ kran.id }}, this)">
+                            <span
+                                class="status-indicator {% if kran.is_active %}active{% if kran.warning_due_date %} warning{% endif %}{% else %}inactive{% endif %}"
+                                title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif kran.is_active and kran.warning_due_date %}Due date has passed{% endif %}">
                                 {% if kran.is_active %}Active{% else %}Inactive{% endif %}
-                            </button>
+                            </span>
                         </td>
                         <td style="text-align:center;">
                             {% if kran.is_active %}

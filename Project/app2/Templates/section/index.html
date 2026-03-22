@@ -385,14 +385,6 @@
                     <span class="kpi-trend-text">{{ overdue_pct }}%</span>
                 </div>
             </div>
-            <div class="kpi-card">
-                <p class="kpi-label">Expiring in 30 Days</p>
-                <p class="kpi-value">{{ expiring_soon_count }}</p>
-                <div class="kpi-trend">
-                    <div class="kpi-trend-bar"><span class="kpi-trend-fill fill-orange" style="width: {{ expiring_pct }}%;"></span></div>
-                    <span class="kpi-trend-text">{{ expiring_pct }}%</span>
-                </div>
-            </div>
         </div>
 
         <div class="chart-grid">
@@ -410,13 +402,9 @@
                 </div>
             </div>
 
-            <div class="panel">
-                <div class="panel-header">Expiry Window</div>
-                <div class="panel-body">
-                    <div class="chart-box"><canvas id="expiryWindowChart"></canvas></div>
-                </div>
-            </div>
+        </div>
 
+        <div class="panel-grid">
             <div class="panel">
                 <div class="panel-header">Top Kunden by Crane Count</div>
                 <div class="panel-body">
@@ -424,62 +412,6 @@
                 </div>
             </div>
 
-            <div class="panel chart-grid-wide" id="growthPanel">
-                <div class="panel-header panel-header-growth">
-                    <span class="growth-title">Company Growth and Amount | <span id="growthScopeLabel">{{ growth_scope_label }}</span></span>
-                    <div class="growth-controls">
-                        <div class="growth-menu">
-                            <button type="button" class="growth-menu-button">Year</button>
-                            <div class="growth-menu-list">
-                                <a class="growth-option growth-year-option growth-ajax-link {% if selected_growth_year == 'all' or not selected_growth_year %}active{% endif %}" data-growth-year="all" data-growth-window="all" href="{% url 'index' %}?growth_year=all&growth_window=all">All Years</a>
-                                {% for year_value in growth_year_options %}
-                                <a class="growth-option growth-year-option growth-ajax-link {% if selected_growth_year == year_value %}active{% endif %}" data-growth-year="{{ year_value }}" data-growth-window="all" href="{% url 'index' %}?growth_year={{ year_value }}&growth_window=all">{{ year_value }}</a>
-                                {% endfor %}
-                            </div>
-                        </div>
-
-                        <div class="growth-menu">
-                            <button type="button" class="growth-menu-button">Months</button>
-                            <div class="growth-menu-list">
-                                <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == 'all' and selected_growth_year == 'all' %}active{% endif %}" data-growth-year="all" data-growth-window="all" href="{% url 'index' %}?growth_year=all&growth_window=all">All Time</a>
-                                <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == '1m' %}active{% endif %}" data-growth-year="all" data-growth-window="1m" href="{% url 'index' %}?growth_year=all&growth_window=1m">Last 1 Month</a>
-                                <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == '3m' %}active{% endif %}" data-growth-year="all" data-growth-window="3m" href="{% url 'index' %}?growth_year=all&growth_window=3m">Last 3 Months</a>
-                                <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == '6m' %}active{% endif %}" data-growth-year="all" data-growth-window="6m" href="{% url 'index' %}?growth_year=all&growth_window=6m">Last 6 Months</a>
-                            </div>
-                        </div>
-
-                        <a class="growth-reset growth-ajax-link" data-growth-year="all" data-growth-window="all" href="{% url 'index' %}?growth_year=all&growth_window=all">Reset</a>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div class="growth-summary">
-                        <div class="growth-summary-card">
-                            <p class="growth-summary-label">Total Amount</p>
-                            <p class="growth-summary-value" id="growthTotalAmount">{{ growth_total_amount }}</p>
-                            <p class="growth-summary-subtext">Amount accumulated in selected view</p>
-                        </div>
-                        <div class="growth-summary-card">
-                            <p class="growth-summary-label">Cranes Counted</p>
-                            <p class="growth-summary-value" id="growthTotalCranes">{{ growth_total_cranes }}</p>
-                            <p class="growth-summary-subtext">Rows included in growth chart</p>
-                        </div>
-                        <div class="growth-summary-card">
-                            <p class="growth-summary-label">Unique Customers</p>
-                            <p class="growth-summary-value" id="growthUniqueCustomers">{{ growth_unique_customers }}</p>
-                            <p class="growth-summary-subtext">Customers represented in selected view</p>
-                        </div>
-                        <div class="growth-summary-card">
-                            <p class="growth-summary-label">Average Amount</p>
-                            <p class="growth-summary-value" id="growthAverageAmount">{{ growth_average_amount }}</p>
-                            <p class="growth-summary-subtext">Average per crane in selected view</p>
-                        </div>
-                    </div>
-                    <div class="chart-box line-chart"><canvas id="amountGrowthChart"></canvas></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="panel-grid">
             <div class="panel">
                 <div class="panel-header">Overdue Due Dates</div>
                 <div class="panel-body dash-table-wrap">
@@ -514,44 +446,59 @@
                 </div>
             </div>
 
-            <div class="panel">
-                <div class="panel-header">Expiring in Next 30 Days</div>
-                <div class="panel-body dash-table-wrap">
-                    <table class="dash-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Kunde</th>
-                                <th>Serien Nr</th>
-                                <th>Expiry</th>
-                                <th>Days Left</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in expiring_rows %}
-                            <tr>
-                                <td>{{ row.id }}</td>
-                                <td>{{ row.kunde }}</td>
-                                <td>{{ row.serien_nr }}</td>
-                                <td>{{ row.expiry_date|date:"Y-m-d" }}</td>
-                                <td>{% if row.days_left == 0 %}Today{% else %}{{ row.days_left }}{% endif %}</td>
-                                <td>
-                                    {% if row.days_left <= 7 %}
-                                    <span class="status-chip chip-orange">Critical</span>
-                                    {% else %}
-                                    <span class="status-chip chip-green">Upcoming</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="6">No expiring contracts in selected range.</td>
-                            </tr>
+        </div>
+
+        <div class="panel" id="growthPanel">
+            <div class="panel-header panel-header-growth">
+                <span class="growth-title">Company Growth and Amount | <span id="growthScopeLabel">{{ growth_scope_label }}</span></span>
+                <div class="growth-controls">
+                    <div class="growth-menu">
+                        <button type="button" class="growth-menu-button">Year</button>
+                        <div class="growth-menu-list">
+                            <a class="growth-option growth-year-option growth-ajax-link {% if selected_growth_year == 'all' or not selected_growth_year %}active{% endif %}" data-growth-year="all" data-growth-window="all" href="{% url 'index' %}?growth_year=all&growth_window=all">All Years</a>
+                            {% for year_value in growth_year_options %}
+                            <a class="growth-option growth-year-option growth-ajax-link {% if selected_growth_year == year_value %}active{% endif %}" data-growth-year="{{ year_value }}" data-growth-window="all" href="{% url 'index' %}?growth_year={{ year_value }}&growth_window=all">{{ year_value }}</a>
                             {% endfor %}
-                        </tbody>
-                    </table>
+                        </div>
+                    </div>
+
+                    <div class="growth-menu">
+                        <button type="button" class="growth-menu-button">Months</button>
+                        <div class="growth-menu-list">
+                            <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == 'all' and selected_growth_year == 'all' %}active{% endif %}" data-growth-year="all" data-growth-window="all" href="{% url 'index' %}?growth_year=all&growth_window=all">All Time</a>
+                            <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == '1m' %}active{% endif %}" data-growth-year="all" data-growth-window="1m" href="{% url 'index' %}?growth_year=all&growth_window=1m">Last 1 Month</a>
+                            <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == '3m' %}active{% endif %}" data-growth-year="all" data-growth-window="3m" href="{% url 'index' %}?growth_year=all&growth_window=3m">Last 3 Months</a>
+                            <a class="growth-option growth-window-option growth-ajax-link {% if selected_growth_window == '6m' %}active{% endif %}" data-growth-year="all" data-growth-window="6m" href="{% url 'index' %}?growth_year=all&growth_window=6m">Last 6 Months</a>
+                        </div>
+                    </div>
+
+                    <a class="growth-reset growth-ajax-link" data-growth-year="all" data-growth-window="all" href="{% url 'index' %}?growth_year=all&growth_window=all">Reset</a>
                 </div>
+            </div>
+            <div class="panel-body">
+                <div class="growth-summary">
+                    <div class="growth-summary-card">
+                        <p class="growth-summary-label">Total Amount</p>
+                        <p class="growth-summary-value" id="growthTotalAmount">{{ growth_total_amount }}</p>
+                        <p class="growth-summary-subtext">Amount accumulated in selected view</p>
+                    </div>
+                    <div class="growth-summary-card">
+                        <p class="growth-summary-label">Cranes Counted</p>
+                        <p class="growth-summary-value" id="growthTotalCranes">{{ growth_total_cranes }}</p>
+                        <p class="growth-summary-subtext">Rows included in growth chart</p>
+                    </div>
+                    <div class="growth-summary-card">
+                        <p class="growth-summary-label">Unique Customers</p>
+                        <p class="growth-summary-value" id="growthUniqueCustomers">{{ growth_unique_customers }}</p>
+                        <p class="growth-summary-subtext">Customers represented in selected view</p>
+                    </div>
+                    <div class="growth-summary-card">
+                        <p class="growth-summary-label">Average Amount</p>
+                        <p class="growth-summary-value" id="growthAverageAmount">{{ growth_average_amount }}</p>
+                        <p class="growth-summary-subtext">Average per crane in selected view</p>
+                    </div>
+                </div>
+                <div class="chart-box line-chart"><canvas id="amountGrowthChart"></canvas></div>
             </div>
         </div>
 
@@ -560,7 +507,6 @@
 
 {{ status_chart|json_script:"status-chart-data" }}
 {{ overdue_aging_chart|json_script:"overdue-aging-chart-data" }}
-{{ expiry_window_chart|json_script:"expiry-window-chart-data" }}
 {{ amount_growth_chart|json_script:"amount-growth-chart-data" }}
 {{ customer_chart|json_script:"customer-chart-data" }}
 
@@ -573,7 +519,6 @@
 
         const statusData = JSON.parse(document.getElementById('status-chart-data').textContent);
         const overdueData = JSON.parse(document.getElementById('overdue-aging-chart-data').textContent);
-        const expiryData = JSON.parse(document.getElementById('expiry-window-chart-data').textContent);
         let amountGrowthData = JSON.parse(document.getElementById('amount-growth-chart-data').textContent);
         const customerData = JSON.parse(document.getElementById('customer-chart-data').textContent);
         const growthPanel = document.getElementById('growthPanel');
@@ -720,21 +665,6 @@
                     label: 'Rows',
                     data: overdueData.values,
                     backgroundColor: ['#ffcdd2', '#ef9a9a', '#c62828'],
-                    borderRadius: 4,
-                    borderSkipped: false
-                }]
-            },
-            options: Object.assign({ maintainAspectRatio: false, plugins: { legend: { display: false } } }, chartDefaults)
-        });
-
-        new Chart(document.getElementById('expiryWindowChart'), {
-            type: 'bar',
-            data: {
-                labels: expiryData.labels,
-                datasets: [{
-                    label: 'Contracts',
-                    data: expiryData.values,
-                    backgroundColor: ['#ffcc80', '#ffb74d', '#81c784'],
                     borderRadius: 4,
                     borderSkipped: false
                 }]
