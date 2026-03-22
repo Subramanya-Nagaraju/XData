@@ -240,6 +240,11 @@
             color: white;
         }
 
+        .status-btn.active.warning {
+            background: #ffc107;
+            color: #333;
+        }
+
         .status-btn.inactive {
             background: #dc3545;
             color: white;
@@ -451,7 +456,7 @@
                 <input type="hidden" name="ref_status" value="{{ ref_status }}">
                 <input type="hidden" name="ref_lizenz_year" value="{{ ref_lizenz_year }}">
                 <input type="hidden" name="ref_amount_bucket" value="{{ ref_amount_bucket }}">
-                <input type="hidden" name="ref_expiry_bucket" value="{{ ref_expiry_bucket }}">
+                <input type="hidden" name="ref_last_paid_year" value="{{ ref_last_paid_year }}">
                 <input type="hidden" name="ref_lg" value="{{ ref_lg }}">
 
                 <select id="primaryFieldSelect" name="primary_field">
@@ -481,7 +486,7 @@
                     <input type="hidden" name="ref_status" value="{{ ref_status }}">
                     <input type="hidden" name="ref_lizenz_year" value="{{ ref_lizenz_year }}">
                     <input type="hidden" name="ref_amount_bucket" value="{{ ref_amount_bucket }}">
-                    <input type="hidden" name="ref_expiry_bucket" value="{{ ref_expiry_bucket }}">
+                    <input type="hidden" name="ref_last_paid_year" value="{{ ref_last_paid_year }}">
                     <input type="hidden" name="ref_lg" value="{{ ref_lg }}">
 
                     <label for="page_size">Rows</label>
@@ -566,9 +571,9 @@
                 </div>
 
                 <div class="facet-group">
-                    <h4>Expiry Bucket</h4>
+                    <h4>Last Paid Year</h4>
                     <div class="facet-options">
-                        {% for option in facet_expiry_bucket_options %}
+                        {% for option in facet_last_paid_year_options %}
                         <a href="{{ option.url }}" class="facet-option ajax-refresh-link {% if option.active %}active{% endif %}">{{ option.label }} ({{ option.count }})</a>
                         {% empty %}
                         <span class="facet-empty">No options</span>
@@ -609,6 +614,7 @@
                         <th>Lizenz Ja</th>
                         <th>Lizenzdatum</th>
                         <th>Bezahlt bis Rg.erstellt</th>
+                        <th>Last Paid Year</th>
                         <th>servicemeldung</th>
                         <th>Amount</th>
                         <th>Status</th>
@@ -633,12 +639,13 @@
                         <td>{{ kran.lizenz_ja }}</td>
                         <td>{{ kran.lizenzdatum }}</td>
                         <td>{{ kran.bezahlt_bis_rg_erstellt }}</td>
+                        <td>{% if kran.last_paid_year %}{{ kran.last_paid_year }}{% else %}null{% endif %}</td>
                         <td>{{ kran.servicemeldung }}</td>
                         <td>{{ kran.amount }}</td>
                         <td>
                             <button
-                                class="status-btn {% if kran.is_active %}active{% else %}inactive{% endif %}"
-                                title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif not kran.is_active and kran.is_expired %}License is expired. Update the expiry date to activate.{% endif %}"
+                                class="status-btn {% if kran.is_active %}active{% if kran.warning_due_date %} warning{% endif %}{% else %}inactive{% endif %}"
+                                title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif kran.is_active and kran.warning_due_date %}Due date has passed{% endif %}"
                                 onclick="toggleStatus({{ kran.id }}, this)">
                                 {% if kran.is_active %}Active{% else %}Inactive{% endif %}
                             </button>

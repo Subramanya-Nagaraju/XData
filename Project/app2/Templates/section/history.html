@@ -18,6 +18,29 @@
             padding: 20px;
         }
 
+        .top-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 8px 14px;
+            background: black;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background: #333;
+            color: white;
+        }
+
         h2 {
             margin-bottom: 20px;
             color: #222;
@@ -115,6 +138,10 @@
 
 <div class="container">
     <h2>Change History</h2>
+
+    <div class="top-bar">
+        <a href="?export=true" class="btn">Export CSV</a>
+    </div>
 
     <div id="historyTableSection">
     <div class="table-wrapper">

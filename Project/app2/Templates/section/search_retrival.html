@@ -120,15 +120,6 @@
             background: #333;
         }
 
-        .filter-btn.overdue {
-            background: #f1c40f;
-            color: #222;
-        }
-
-        .filter-btn.overdue:hover {
-            background: #d4ac0d;
-        }
-
         /* 🔝 TOP BAR WITH EXPORT */
         .top-bar {
             display: flex;
@@ -363,6 +354,7 @@
             <th>Lizenz Ja</th>
             <th>Lizenzdatum</th>
             <th>Bezahlt bis Rg.erstellt</th>
+            <th>Last Paid Year</th>
             <th>servicemeldung</th>
             <th>Amount</th>
             <th>Action</th>
@@ -386,19 +378,19 @@
             <td>{{ kran.kundenkran }}</td>
             <td>{{ kran.lizenz_ja }}</td>
             <td>{{ kran.lizenzdatum }}</td>
-            <td>{{ kran.bezahlt_bis_rg_erstellt }}</td>
+            <td>{{ kran.display_due_date|default:kran.bezahlt_bis_rg_erstellt }}</td>
+            <td>{% if kran.last_paid_year %}{{ kran.last_paid_year }}{% else %}null{% endif %}</td>
             <td>{{ kran.servicemeldung }}</td>
             <td>{{ kran.amount }}</td>
             <td>
-                <button class="filter-btn{% if kran.is_due_overdue %} overdue{% endif %}"
+                <button class="filter-btn"
                     onclick="openPayModal({{ kran.id }}, '{{ kran.kunde|escapejs }}', '{{ kran.current_due_date|date:'Y-m-d'|default:''|escapejs }}')"
-                    title="{% if kran.is_due_overdue %}Due date has passed{% endif %}"
                     type="button">Paid</button>
             </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="20">No data found for the selected filters</td>
+            <td colspan="21">No data found for the selected filters</td>
         </tr>
         {% endfor %}
     </tbody>

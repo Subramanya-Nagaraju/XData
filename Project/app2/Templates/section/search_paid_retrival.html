@@ -326,6 +326,7 @@
             <th>Lizenz Ja</th>
             <th>Lizenzdatum</th>
             <th>Bezahlt bis Rg.erstellt</th>
+            <th>Last Paid Year</th>
             <th>servicemeldung</th>
             <th>Amount</th>
             <th>Payment Date</th>
@@ -350,7 +351,8 @@
             <td>{{ kran.kundenkran }}</td>
             <td>{{ kran.lizenz_ja }}</td>
             <td>{{ kran.lizenzdatum }}</td>
-            <td>{{ kran.bezahlt_bis_rg_erstellt }}</td>
+            <td>{{ kran.display_due_date|default:kran.bezahlt_bis_rg_erstellt }}</td>
+            <td>{% if kran.last_paid_year %}{{ kran.last_paid_year }}{% else %}null{% endif %}</td>
             <td>{{ kran.servicemeldung }}</td>
             <td>{{ kran.amount }}</td>
             <td>
@@ -378,7 +380,7 @@
         </tr>
         {% empty %}
         <tr>
-            <td colspan="21">No data found for the selected filters</td>
+            <td colspan="22">No data found for the selected filters</td>
         </tr>
         {% endfor %}
     </tbody>

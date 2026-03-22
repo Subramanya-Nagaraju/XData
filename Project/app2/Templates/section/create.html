@@ -53,6 +53,17 @@
 			width: 100%;
 		}
 
+		/* Remove spinner arrows from numeric inputs */
+		input[type=number]::-webkit-outer-spin-button,
+		input[type=number]::-webkit-inner-spin-button {
+			-webkit-appearance: none;
+			margin: 0;
+		}
+
+		input[type=number] {
+			-moz-appearance: textfield;
+		}
+
 		.required {
 			color: #c00;
 		}
@@ -119,11 +130,7 @@
 
 			<div class="form-group">
 				<label>LG <span class="required">*</span></label>
-				<select name="lg" required>
-					<option value="">Select</option>
-					<option value="DE" {% if form_data.lg == 'DE' %}selected{% endif %}>DE</option>
-					<option value="LE" {% if form_data.lg == 'LE' %}selected{% endif %}>LE</option>
-				</select>
+				<input type="text" name="lg" value="{{ form_data.lg|default:'' }}" required>
 			</div>
 
 			<div class="form-group">
@@ -152,8 +159,8 @@
 			</div>
 
 			<div class="form-group">
-				<label>Rueckmeldung <span class="required">*</span></label>
-				<input type="text" name="rueckmeldung" value="{{ form_data.rueckmeldung|default:'' }}" required>
+				<label>Rueckmeldung (YYYY-MM-DD) <span class="required">*</span></label>
+				<input type="text" name="rueckmeldung" value="{{ form_data.rueckmeldung|default:'' }}" placeholder="YYYY-MM-DD" required>
 			</div>
 
 			<div class="form-group">
@@ -175,7 +182,7 @@
 				<select name="lizenz_ja" required>
 					<option value="">Select</option>
 					<option value="JA" {% if form_data.lizenz_ja == 'JA' %}selected{% endif %}>JA</option>
-					<option value="NA" {% if form_data.lizenz_ja == 'NA' %}selected{% endif %}>NA</option>
+					<option value="NEIN" {% if form_data.lizenz_ja == 'NEIN' or form_data.lizenz_ja == 'NA' %}selected{% endif %}>NEIN</option>
 				</select>
 			</div>
 

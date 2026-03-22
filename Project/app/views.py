@@ -1,4 +1,5 @@
 import csv
+import json
 from collections import Counter
 from datetime import date, datetime
 
@@ -66,35 +67,18 @@ def _parse_iso_date(value):
     return None
 
 
-def _is_license_expired(expiry_value, today_value=None):
-    expiry_date = _parse_iso_date(expiry_value)
-    if not expiry_date:
-        return False
-
-    if today_value is None:
-        today_value = date.today()
-
-    return expiry_date < today_value
-
-
-def _sync_expired_cranes():
-    """Auto-mark active cranes as inactive once license expiry date has passed."""
-    today_value = date.today()
-    active_cranes = Crane.objects.filter(is_active=True).only('id', 'bezahlt_bis_rg_erstellt')
-    expired_ids = [
-        crane.id
-        for crane in active_cranes
-        if _is_license_expired(crane.bezahlt_bis_rg_erstellt, today_value)
-    ]
-
-    if expired_ids:
-        Crane.objects.filter(id__in=expired_ids).update(is_active=False)
-
-
 def _attach_expiry_flag(cranes):
-    today_value = date.today()
+    """No expiry logic - dates are just reference numbers."""
     for crane in cranes:
-        crane.is_expired = _is_license_expired(crane.bezahlt_bis_rg_erstellt, today_value)
+        crane.is_expired = False
+
+
+def _due_display_date_for_crane(crane):
+    due_status = getattr(crane, 'due_status', None)
+    tracked_due = _parse_iso_date(due_status.next_due_date) if due_status else None
+    if tracked_due:
+        return tracked_due.strftime('%Y-%m-%d')
+    return crane.bezahlt_bis_rg_erstellt
 
 
 def _due_years_for_crane(crane):
@@ -107,10 +91,9 @@ def _due_years_for_crane(crane):
 
 
 def _current_due_date_for_crane(crane):
-    start_date = _parse_iso_date(crane.lizenzdatum)
-    end_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+    initial_due_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
 
-    if not start_date or not end_date or start_date >= end_date:
+    if not initial_due_date:
         return None
 
     tracked_due_str = None
@@ -120,26 +103,19 @@ def _current_due_date_for_crane(crane):
 
     tracked_due = _parse_iso_date(tracked_due_str)
     if not tracked_due:
-        return start_date
+        return initial_due_date
 
-    if tracked_due < start_date:
-        return start_date
-
-    if tracked_due >= end_date:
-        return None
+    if tracked_due < initial_due_date:
+        return initial_due_date
 
     return tracked_due
 
 
-def _next_due_preview_date(current_due, expiry_date):
+def _next_due_preview_date(current_due, expiry_date=None):
     if not current_due:
         return None
 
-    next_due = current_due + relativedelta(years=1)
-    if expiry_date and next_due > expiry_date:
-        next_due = expiry_date
-
-    return next_due
+    return current_due + relativedelta(years=1)
 
 
 def _restore_due_status_payment_snapshot(due_status):
@@ -155,9 +131,8 @@ def _restore_due_status_payment_snapshot(due_status):
 
 def _mark_due_paid_in_background(crane, actual_paid_date=None):
     current_due = _current_due_date_for_crane(crane)
-    expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
 
-    if not current_due or not expiry_date:
+    if not current_due:
         return None, None, None
 
     if actual_paid_date is None:
@@ -167,7 +142,7 @@ def _mark_due_paid_in_background(crane, actual_paid_date=None):
     if actual_paid_date > server_today:
         return None, None, None
 
-    next_due = _next_due_preview_date(current_due, expiry_date)
+    next_due = _next_due_preview_date(current_due)
     if not next_due:
         return None, None, None
 
@@ -183,14 +158,13 @@ def _mark_due_paid_in_background(crane, actual_paid_date=None):
         due_status.actual_paid_date = payment_record.actual_paid_date
         due_status.save(update_fields=['next_due_date', 'last_paid_at', 'actual_paid_date'])
 
-    return current_due, next_due, expiry_date
+    return current_due, next_due, None
 
 
 def _mark_due_unpaid_in_background(crane):
-    start_date = _parse_iso_date(crane.lizenzdatum)
-    expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+    initial_due_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
 
-    if not start_date or not expiry_date or start_date >= expiry_date:
+    if not initial_due_date:
         return None, None, None
 
     due_status = getattr(crane, 'due_status', None)
@@ -200,7 +174,7 @@ def _mark_due_unpaid_in_background(crane):
         return None, None, None
 
     previous_due = tracked_due + relativedelta(years=-1)
-    if previous_due < start_date:
+    if previous_due < initial_due_date:
         return None, None, None
 
     with transaction.atomic():
@@ -212,7 +186,7 @@ def _mark_due_unpaid_in_background(crane):
         _restore_due_status_payment_snapshot(due_status)
         due_status.save(update_fields=['next_due_date', 'last_paid_at', 'actual_paid_date'])
 
-    return previous_due, start_date, expiry_date
+    return previous_due, initial_due_date, None
 
 
 def _matches_due_filter(crane, year, month_num, day_num):
@@ -235,24 +209,21 @@ def _matches_due_filter(crane, year, month_num, day_num):
 
 def _paid_due_dates_for_crane(crane):
     """Return historical paid due dates for a crane (one entry per paid year)."""
-    start_date = _parse_iso_date(crane.lizenzdatum)
-    expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+    initial_due_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
 
-    if not start_date or not expiry_date or start_date >= expiry_date:
+    if not initial_due_date:
         return []
 
-    current_due = _current_due_date_for_crane(crane)
-    if current_due:
-        last_paid_due = current_due + relativedelta(years=-1)
-    else:
-        # Fully paid contracts have dues paid up to the year before expiry boundary.
-        last_paid_due = expiry_date + relativedelta(years=-1)
+    inferred_last_paid_due = initial_due_date + relativedelta(years=-1)
 
-    if last_paid_due < start_date:
+    current_due = _current_due_date_for_crane(crane)
+    last_paid_due = current_due + relativedelta(years=-1) if current_due else inferred_last_paid_due
+
+    if last_paid_due < inferred_last_paid_due:
         return []
 
     paid_dates = []
-    cursor = start_date
+    cursor = inferred_last_paid_due
     while cursor <= last_paid_due:
         paid_dates.append(cursor)
         cursor = cursor + relativedelta(years=1)
@@ -262,6 +233,24 @@ def _paid_due_dates_for_crane(crane):
 
 def _paid_years_for_crane(crane):
     return [due_date.year for due_date in _paid_due_dates_for_crane(crane)]
+
+
+def _last_paid_year_for_crane(crane):
+    initial_due_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+    if not initial_due_date:
+        return None
+
+    due_status = getattr(crane, 'due_status', None)
+    if not due_status:
+        return (initial_due_date + relativedelta(years=-1)).year
+
+    if due_status.actual_paid_date:
+        return due_status.actual_paid_date.year
+
+    if due_status.last_paid_at:
+        return due_status.last_paid_at.year
+
+    return (initial_due_date + relativedelta(years=-1)).year
 
 
 def _matches_paid_filter(crane, year, month_num, day_num):
@@ -319,7 +308,7 @@ def _get_due_filtered_queryset(request):
         if not 1 <= day_num <= 31:
             day_num = None
 
-    queryset = list(Crane.objects.filter(is_active=True).select_related('due_status'))
+    queryset = list(Crane.objects.filter(is_active=True).select_related('due_status').order_by('id'))
     queryset = [
         crane for crane in queryset
         if _matches_due_filter(crane, year, month_num, day_num)
@@ -331,10 +320,15 @@ def _get_due_filtered_queryset(request):
         current_due = _current_due_date_for_crane(crane)
         expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
         next_due_preview = _next_due_preview_date(current_due, expiry_date)
+        display_date = _due_display_date_for_crane(crane)
+        display_date_parsed = _parse_iso_date(display_date)
 
         crane.current_due_date = current_due
         crane.next_due_preview = next_due_preview
-        crane.is_due_overdue = bool(current_due and current_due < today_value and (not expiry_date or current_due < expiry_date))
+        crane.is_due_overdue = False
+        crane.display_due_date = display_date
+        crane.warning_due_date = bool(display_date_parsed and display_date_parsed <= today_value)
+        crane.last_paid_year = _last_paid_year_for_crane(crane)
 
     sort_by = request.GET.get('sort', 'id')
     order = request.GET.get('order', 'asc')
@@ -375,7 +369,7 @@ def _get_paid_filtered_queryset(request):
         if not 1 <= day_num <= 31:
             day_num = None
 
-    queryset = list(Crane.objects.filter(is_active=True).select_related('due_status'))
+    queryset = list(Crane.objects.filter(is_active=True).select_related('due_status').order_by('id'))
     queryset = [
         crane for crane in queryset
         if _matches_paid_filter(crane, year, month_num, day_num)
@@ -392,6 +386,10 @@ def _get_paid_filtered_queryset(request):
     ]
     if sort_by not in allowed_sorts:
         sort_by = 'id'
+
+    for crane in queryset:
+        crane.display_due_date = _due_display_date_for_crane(crane)
+        crane.last_paid_year = _last_paid_year_for_crane(crane)
 
     queryset.sort(key=lambda crane: crane.id)
     queryset.sort(
@@ -480,8 +478,6 @@ def login(request):
 @login_required(login_url='login')
 @never_cache
 def index(request):
-    _sync_expired_cranes()
-
     today_value = date.today()
     growth_window = request.GET.get('growth_window', 'all').strip().lower()
     if growth_window not in {'all', '1m', '3m', '6m'}:
@@ -759,8 +755,7 @@ def index(request):
 @login_required(login_url='login')
 @never_cache
 def data(request):
-    _sync_expired_cranes()
-    queryset = list(_with_termination_flag(Crane.objects.all()).order_by('id'))
+    queryset = list(_with_termination_flag(Crane.objects.select_related('due_status').all()).order_by('id'))
     _attach_expiry_flag(queryset)
     today_value = date.today()
 
@@ -792,9 +787,9 @@ def data(request):
     if ref_amount_bucket not in {'', '0_999', '1000_2499', '2500_4999', '5000_plus'}:
         ref_amount_bucket = ''
 
-    ref_expiry_bucket = request.GET.get('ref_expiry_bucket', '').strip()
-    if ref_expiry_bucket not in {'', 'expired', '0_30', '31_90', '90_plus'}:
-        ref_expiry_bucket = ''
+    ref_last_paid_year = request.GET.get('ref_last_paid_year', '').strip().lower()
+    if ref_last_paid_year != 'null' and (ref_last_paid_year and (not ref_last_paid_year.isdigit() or len(ref_last_paid_year) != 4)):
+        ref_last_paid_year = ''
 
     ref_lg = request.GET.get('ref_lg', '').strip()
 
@@ -828,19 +823,8 @@ def data(request):
             return amount_value >= 5000
         return True
 
-    def _expiry_bucket_value(crane):
-        expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
-        if not expiry_date:
-            return None
-
-        days_left = (expiry_date - today_value).days
-        if days_left < 0:
-            return 'expired'
-        if days_left <= 30:
-            return '0_30'
-        if days_left <= 90:
-            return '31_90'
-        return '90_plus'
+    def _last_paid_year_value(crane):
+        return _last_paid_year_for_crane(crane)
 
     def _apply_primary_filter(records):
         if not primary_value:
@@ -887,11 +871,18 @@ def data(request):
                 if _matches_amount_bucket(crane, ref_amount_bucket)
             ]
 
-        if ref_expiry_bucket and skip != 'ref_expiry_bucket':
-            filtered_records = [
-                crane for crane in filtered_records
-                if _expiry_bucket_value(crane) == ref_expiry_bucket
-            ]
+        if ref_last_paid_year and skip != 'ref_last_paid_year':
+            if ref_last_paid_year == 'null':
+                filtered_records = [
+                    crane for crane in filtered_records
+                    if _last_paid_year_value(crane) is None
+                ]
+            else:
+                selected_paid_year = int(ref_last_paid_year)
+                filtered_records = [
+                    crane for crane in filtered_records
+                    if _last_paid_year_value(crane) == selected_paid_year
+                ]
 
         if ref_lg and skip != 'ref_lg':
             filtered_records = [
@@ -1006,23 +997,18 @@ def data(request):
         if amount_bucket_counts.get(bucket_key, 0) or ref_amount_bucket == bucket_key
     ]
 
-    expiry_bucket_labels = {
-        'expired': 'Expired',
-        '0_30': '0-30 Days',
-        '31_90': '31-90 Days',
-        '90_plus': '90+ Days',
-    }
-    expiry_source = _apply_refinements(primary_filtered_records, skip='ref_expiry_bucket')
-    expiry_bucket_counts = Counter(
-        _expiry_bucket_value(crane)
-        for crane in expiry_source
-        if _expiry_bucket_value(crane)
-    )
-    facet_expiry_bucket_options = [
-        _facet_option(bucket_key, expiry_bucket_labels[bucket_key], expiry_bucket_counts.get(bucket_key, 0), ref_expiry_bucket, 'ref_expiry_bucket')
-        for bucket_key in ('expired', '0_30', '31_90', '90_plus')
-        if expiry_bucket_counts.get(bucket_key, 0) or ref_expiry_bucket == bucket_key
+    paid_year_source = _apply_refinements(primary_filtered_records, skip='ref_last_paid_year')
+    paid_year_values = [_last_paid_year_value(crane) for crane in paid_year_source]
+    paid_year_counts = Counter(year_value for year_value in paid_year_values if year_value is not None)
+    null_paid_year_count = sum(1 for year_value in paid_year_values if year_value is None)
+    facet_last_paid_year_options = [
+        _facet_option(year_value, str(year_value), paid_year_counts.get(year_value, 0), ref_last_paid_year, 'ref_last_paid_year')
+        for year_value in sorted(paid_year_counts.keys(), reverse=True)
     ]
+    if null_paid_year_count or ref_last_paid_year == 'null':
+        facet_last_paid_year_options.append(
+            _facet_option('null', 'Null', null_paid_year_count, ref_last_paid_year, 'ref_last_paid_year')
+        )
 
     lg_source = _apply_refinements(primary_filtered_records, skip='ref_lg')
     lg_counts = Counter(
@@ -1068,10 +1054,10 @@ def data(request):
             'remove_url': _build_query({'ref_amount_bucket': None}),
         })
 
-    if ref_expiry_bucket:
+    if ref_last_paid_year:
         selected_filter_chips.append({
-            'label': f"Expiry: {expiry_bucket_labels.get(ref_expiry_bucket, ref_expiry_bucket)}",
-            'remove_url': _build_query({'ref_expiry_bucket': None}),
+            'label': f"Last Paid Year: {ref_last_paid_year.upper() if ref_last_paid_year == 'null' else ref_last_paid_year}",
+            'remove_url': _build_query({'ref_last_paid_year': None}),
         })
 
     if ref_lg:
@@ -1080,7 +1066,7 @@ def data(request):
             'remove_url': _build_query({'ref_lg': None}),
         })
 
-    has_refinements = bool(ref_kran_typ or ref_status or ref_lizenz_year or ref_amount_bucket or ref_expiry_bucket or ref_lg)
+    has_refinements = bool(ref_kran_typ or ref_status or ref_lizenz_year or ref_amount_bucket or ref_last_paid_year or ref_lg)
 
     # 📊 EXPORT CSV
     if request.GET.get('export') == 'true':
@@ -1118,6 +1104,12 @@ def data(request):
     paginator = Paginator(filtered_records, page_size)
     page_obj = paginator.get_page(request.GET.get('page'))
     _attach_expiry_flag(page_obj.object_list)
+    for crane in page_obj.object_list:
+        display_date = _due_display_date_for_crane(crane)
+        display_date_parsed = _parse_iso_date(display_date)
+        crane.display_due_date = display_date
+        crane.warning_due_date = bool(display_date_parsed and display_date_parsed <= today_value)
+        crane.last_paid_year = _last_paid_year_for_crane(crane)
 
     export_params = request.GET.copy()
     export_params.pop('page', None)
@@ -1146,13 +1138,13 @@ def data(request):
         'ref_status': ref_status,
         'ref_lizenz_year': ref_lizenz_year,
         'ref_amount_bucket': ref_amount_bucket,
-        'ref_expiry_bucket': ref_expiry_bucket,
+        'ref_last_paid_year': ref_last_paid_year,
         'ref_lg': ref_lg,
         'facet_kran_typ_options': facet_kran_typ_options,
         'facet_status_options': facet_status_options,
         'facet_lizenz_year_options': facet_lizenz_year_options,
         'facet_amount_bucket_options': facet_amount_bucket_options,
-        'facet_expiry_bucket_options': facet_expiry_bucket_options,
+        'facet_last_paid_year_options': facet_last_paid_year_options,
         'facet_lg_options': facet_lg_options,
         'customer_suggestions': customer_suggestions,
         'selected_filter_chips': selected_filter_chips,
@@ -1188,7 +1180,7 @@ def custom_404(request, exception):
 def clear_entry(request, pk):
     kran = get_object_or_404(Crane, pk=pk)
 
-    if request.method == "POST" and kran.lizenzdatum:
+    if request.method == "POST" and kran.bezahlt_bis_rg_erstellt:
         current_due, next_due, _ = _mark_due_paid_in_background(kran)
         if next_due:
             _log_change(
@@ -1219,19 +1211,6 @@ def toggle_status(request, pk):
                 status=403,
             )
 
-        # Expired licenses cannot be re-activated until expiry is extended.
-        if not kran.is_active and _is_license_expired(kran.bezahlt_bis_rg_erstellt):
-            return JsonResponse(
-                {
-                    'success': False,
-                    'error': 'License is expired. Update the expiry date to activate.',
-                    'is_active': False,
-                    'is_terminated': is_terminated,
-                    'is_expired': True,
-                },
-                status=403,
-            )
-
         kran.is_active = not kran.is_active
         kran.save(update_fields=['is_active'])
 
@@ -1247,7 +1226,6 @@ def toggle_status(request, pk):
                 'success': True,
                 'is_active': kran.is_active,
                 'is_terminated': is_terminated,
-                'is_expired': _is_license_expired(kran.bezahlt_bis_rg_erstellt),
             }
         )
     
@@ -1257,7 +1235,6 @@ def toggle_status(request, pk):
 @never_cache
 def search_rg(request):
     """Search cranes by computed due years and mark selected due as paid."""
-    _sync_expired_cranes()
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
         crane_id = request.POST.get('crane_id', '').strip()
@@ -1270,16 +1247,14 @@ def search_rg(request):
 
             crane = get_object_or_404(
                 Crane.objects.select_related('due_status'),
-                pk=int(crane_id),
-                is_active=True
+                pk=int(crane_id)
             )
             current_due = _current_due_date_for_crane(crane)
-            expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
 
-            if not current_due or not expiry_date:
+            if not current_due:
                 messages.error(
                     request,
-                    f'ID {crane.id}: invalid Lizenzdatum or Bezahlt bis date.'
+                    f'ID {crane.id}: invalid Bezahlt bis Rg.erstellt date.'
                 )
                 return redirect(redirect_url)
 
@@ -1335,7 +1310,7 @@ def search_rg(request):
         writer.writerow(['ID', 'Kran Typ', 'Fabrik Nr', 'Kunde', 'LG', 'Kundenummer', 
                         'Version', 'Serien Nr', 'Tel Nr', 'IP', 'Rueckmeldung', 'IT Nr',
                         'Kundenkran', 'Lizenz Ja', 'Lizenzdatum', 'Bezahlt bis Rg.erstellt',
-                        'Servicemeldung', 'Amount', 'Status'])
+                        'Last Paid Year', 'Servicemeldung', 'Amount', 'Status'])
         
         for crane in queryset:
             writer.writerow([
@@ -1343,7 +1318,9 @@ def search_rg(request):
                 crane.lg, crane.kundenummer, crane.version, crane.serien_nr,
                 crane.tel_nr, crane.ip, crane.rueckmeldung,
                 crane.it_nr, crane.kundenkran, crane.lizenz_ja,
-                crane.lizenzdatum, crane.bezahlt_bis_rg_erstellt, crane.servicemeldung,
+                crane.lizenzdatum, getattr(crane, 'display_due_date', crane.bezahlt_bis_rg_erstellt),
+                getattr(crane, 'last_paid_year', None),
+                crane.servicemeldung,
                 crane.amount,
                 'Active' if crane.is_active else 'Inactive'
             ])
@@ -1361,7 +1338,6 @@ def search_rg(request):
 @never_cache
 def search_paid(request):
     """Search cranes by paid history years and mark selected entry as unpaid."""
-    _sync_expired_cranes()
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
         crane_id = request.POST.get('crane_id', '').strip()
@@ -1374,8 +1350,7 @@ def search_paid(request):
 
             crane = get_object_or_404(
                 Crane.objects.select_related('due_status'),
-                pk=int(crane_id),
-                is_active=True
+                pk=int(crane_id)
             )
 
             previous_due, _, _ = _mark_due_unpaid_in_background(crane)
@@ -1400,7 +1375,7 @@ def search_paid(request):
         writer.writerow(['ID', 'Kran Typ', 'Fabrik Nr', 'Kunde', 'LG', 'Kundenummer',
                         'Version', 'Serien Nr', 'Tel Nr', 'IP', 'Rueckmeldung', 'IT Nr',
                         'Kundenkran', 'Lizenz Ja', 'Lizenzdatum', 'Bezahlt bis Rg.erstellt',
-                        'Servicemeldung', 'Amount', 'Status', 'Payment Date (Actual)', 'Recorded At (System)'])
+                        'Last Paid Year', 'Servicemeldung', 'Amount', 'Status', 'Payment Date (Actual)', 'Recorded At (System)'])
 
         for crane in queryset:
             due = getattr(crane, 'due_status', None)
@@ -1411,7 +1386,7 @@ def search_paid(request):
                 crane.lg, crane.kundenummer, crane.version, crane.serien_nr,
                 crane.tel_nr, crane.ip, crane.rueckmeldung,
                 crane.it_nr, crane.kundenkran, crane.lizenz_ja,
-                crane.lizenzdatum, crane.bezahlt_bis_rg_erstellt, crane.servicemeldung,
+                crane.lizenzdatum, getattr(crane, 'display_due_date', crane.bezahlt_bis_rg_erstellt), getattr(crane, 'last_paid_year', None), crane.servicemeldung,
                 crane.amount,
                 'Active' if crane.is_active else 'Inactive',
                 actual_paid,
@@ -1430,13 +1405,11 @@ def search_paid(request):
 @login_required(login_url='login')
 @never_cache
 def update_rg(request):
-    """Update expiry date or mark current due year paid for selected crane rows."""
-    _sync_expired_cranes()
+    """Display rows and support due-status workflows on update page."""
 
     if request.method == 'POST':
-        action = request.POST.get('action', 'update_expiry').strip()
+        action = request.POST.get('action', '').strip()
         crane_id = request.POST.get('crane_id', '').strip()
-        new_date = request.POST.get('bezahlt_bis_rg_erstellt', '').strip()
         redirect_url = request.POST.get('next') or '/update_rg/'
 
         if not crane_id.isdigit():
@@ -1445,22 +1418,14 @@ def update_rg(request):
 
         crane = get_object_or_404(Crane, pk=int(crane_id))
 
-        if action == 'update_expiry' and Termination.objects.filter(crane=crane).exists():
-            messages.error(request, f'ID {crane.id}: terminated rows cannot update expiry date.')
-            return redirect(redirect_url)
-
         if action == 'mark_paid':
             current_due = _current_due_date_for_crane(crane)
-            expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
 
-            if not current_due or not expiry_date:
+            if not current_due:
                 messages.error(
                     request,
-                    f'ID {crane.id}: invalid Lizenzdatum or Bezahlt bis date.'
+                    f'ID {crane.id}: invalid Bezahlt bis Rg.erstellt date.'
                 )
-                return redirect(redirect_url)
-
-            if not current_due or current_due >= expiry_date:
                 return redirect(redirect_url)
 
             paid_date_str = request.POST.get('actual_paid_date', '').strip()
@@ -1505,30 +1470,18 @@ def update_rg(request):
             )
             return redirect(redirect_url)
 
-        if not new_date:
-            messages.error(request, 'Please provide Bezahlt bis Rg.erstellt date.')
-            return redirect(redirect_url)
-
-        try:
-            parsed_date = datetime.strptime(new_date, '%Y-%m-%d')
-        except ValueError:
-            messages.error(request, 'Invalid date format. Use YYYY-MM-DD.')
-            return redirect(redirect_url)
-
-        crane.bezahlt_bis_rg_erstellt = parsed_date.strftime('%Y-%m-%d')
-        crane.save(update_fields=['bezahlt_bis_rg_erstellt'])
-
-        _log_change(
-            request,
-            'update_expiry',
-            crane=crane,
-            details=f'Expiry date updated to {crane.bezahlt_bis_rg_erstellt}.',
-        )
+        messages.error(request, 'Unsupported action.')
         return redirect(redirect_url)
 
-    queryset = list(_with_termination_flag(Crane.objects.all()).order_by('id'))
+    queryset = list(_with_termination_flag(Crane.objects.select_related('due_status').all()).order_by('id'))
     _attach_expiry_flag(queryset)
     today_value = date.today()
+    for crane in queryset:
+        display_date = _due_display_date_for_crane(crane)
+        display_date_parsed = _parse_iso_date(display_date)
+        crane.display_due_date = display_date
+        crane.warning_due_date = bool(display_date_parsed and display_date_parsed <= today_value)
+        crane.last_paid_year = _last_paid_year_for_crane(crane)
 
     major_search_fields = [
         ('kunde', 'Kunde'),
@@ -1562,9 +1515,9 @@ def update_rg(request):
     if ref_amount_bucket not in {'', '0_999', '1000_2499', '2500_4999', '5000_plus'}:
         ref_amount_bucket = ''
 
-    ref_expiry_bucket = request.GET.get('ref_expiry_bucket', '').strip()
-    if ref_expiry_bucket not in {'', 'expired', '0_30', '31_90', '90_plus'}:
-        ref_expiry_bucket = ''
+    ref_last_paid_year = request.GET.get('ref_last_paid_year', '').strip().lower()
+    if ref_last_paid_year != 'null' and (ref_last_paid_year and (not ref_last_paid_year.isdigit() or len(ref_last_paid_year) != 4)):
+        ref_last_paid_year = ''
 
     ref_lg = request.GET.get('ref_lg', '').strip()
 
@@ -1598,19 +1551,8 @@ def update_rg(request):
             return amount_value >= 5000
         return True
 
-    def _expiry_bucket_value(crane):
-        expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
-        if not expiry_date:
-            return None
-
-        days_left = (expiry_date - today_value).days
-        if days_left < 0:
-            return 'expired'
-        if days_left <= 30:
-            return '0_30'
-        if days_left <= 90:
-            return '31_90'
-        return '90_plus'
+    def _last_paid_year_value(crane):
+        return _last_paid_year_for_crane(crane)
 
     def _apply_primary_filter(records):
         if not primary_value:
@@ -1657,11 +1599,18 @@ def update_rg(request):
                 if _matches_amount_bucket(crane, ref_amount_bucket)
             ]
 
-        if ref_expiry_bucket and skip != 'ref_expiry_bucket':
-            filtered_records = [
-                crane for crane in filtered_records
-                if _expiry_bucket_value(crane) == ref_expiry_bucket
-            ]
+        if ref_last_paid_year and skip != 'ref_last_paid_year':
+            if ref_last_paid_year == 'null':
+                filtered_records = [
+                    crane for crane in filtered_records
+                    if _last_paid_year_value(crane) is None
+                ]
+            else:
+                selected_paid_year = int(ref_last_paid_year)
+                filtered_records = [
+                    crane for crane in filtered_records
+                    if _last_paid_year_value(crane) == selected_paid_year
+                ]
 
         if ref_lg and skip != 'ref_lg':
             filtered_records = [
@@ -1776,23 +1725,18 @@ def update_rg(request):
         if amount_bucket_counts.get(bucket_key, 0) or ref_amount_bucket == bucket_key
     ]
 
-    expiry_bucket_labels = {
-        'expired': 'Expired',
-        '0_30': '0-30 Days',
-        '31_90': '31-90 Days',
-        '90_plus': '90+ Days',
-    }
-    expiry_source = _apply_refinements(primary_filtered_records, skip='ref_expiry_bucket')
-    expiry_bucket_counts = Counter(
-        _expiry_bucket_value(crane)
-        for crane in expiry_source
-        if _expiry_bucket_value(crane)
-    )
-    facet_expiry_bucket_options = [
-        _facet_option(bucket_key, expiry_bucket_labels[bucket_key], expiry_bucket_counts.get(bucket_key, 0), ref_expiry_bucket, 'ref_expiry_bucket')
-        for bucket_key in ('expired', '0_30', '31_90', '90_plus')
-        if expiry_bucket_counts.get(bucket_key, 0) or ref_expiry_bucket == bucket_key
+    paid_year_source = _apply_refinements(primary_filtered_records, skip='ref_last_paid_year')
+    paid_year_values = [_last_paid_year_value(crane) for crane in paid_year_source]
+    paid_year_counts = Counter(year_value for year_value in paid_year_values if year_value is not None)
+    null_paid_year_count = sum(1 for year_value in paid_year_values if year_value is None)
+    facet_last_paid_year_options = [
+        _facet_option(year_value, str(year_value), paid_year_counts.get(year_value, 0), ref_last_paid_year, 'ref_last_paid_year')
+        for year_value in sorted(paid_year_counts.keys(), reverse=True)
     ]
+    if null_paid_year_count or ref_last_paid_year == 'null':
+        facet_last_paid_year_options.append(
+            _facet_option('null', 'Null', null_paid_year_count, ref_last_paid_year, 'ref_last_paid_year')
+        )
 
     lg_source = _apply_refinements(primary_filtered_records, skip='ref_lg')
     lg_counts = Counter(
@@ -1838,10 +1782,10 @@ def update_rg(request):
             'remove_url': _build_query({'ref_amount_bucket': None}),
         })
 
-    if ref_expiry_bucket:
+    if ref_last_paid_year:
         selected_filter_chips.append({
-            'label': f"Expiry: {expiry_bucket_labels.get(ref_expiry_bucket, ref_expiry_bucket)}",
-            'remove_url': _build_query({'ref_expiry_bucket': None}),
+            'label': f"Last Paid Year: {ref_last_paid_year.upper() if ref_last_paid_year == 'null' else ref_last_paid_year}",
+            'remove_url': _build_query({'ref_last_paid_year': None}),
         })
 
     if ref_lg:
@@ -1850,11 +1794,16 @@ def update_rg(request):
             'remove_url': _build_query({'ref_lg': None}),
         })
 
-    has_refinements = bool(ref_kran_typ or ref_status or ref_lizenz_year or ref_amount_bucket or ref_expiry_bucket or ref_lg)
+    has_refinements = bool(ref_kran_typ or ref_status or ref_lizenz_year or ref_amount_bucket or ref_last_paid_year or ref_lg)
 
     paginator = Paginator(filtered_records, page_size)
     page_obj = paginator.get_page(request.GET.get('page'))
     _attach_expiry_flag(page_obj.object_list)
+    for crane in page_obj.object_list:
+        display_date = _due_display_date_for_crane(crane)
+        display_date_parsed = _parse_iso_date(display_date)
+        crane.display_due_date = display_date
+        crane.warning_due_date = bool(display_date_parsed and display_date_parsed <= today_value)
 
     page_url_first = _build_query({'page': 1})
     page_url_prev = _build_query({'page': page_obj.previous_page_number()}) if page_obj.has_previous() else ''
@@ -1877,13 +1826,13 @@ def update_rg(request):
         'ref_status': ref_status,
         'ref_lizenz_year': ref_lizenz_year,
         'ref_amount_bucket': ref_amount_bucket,
-        'ref_expiry_bucket': ref_expiry_bucket,
+        'ref_last_paid_year': ref_last_paid_year,
         'ref_lg': ref_lg,
         'facet_kran_typ_options': facet_kran_typ_options,
         'facet_status_options': facet_status_options,
         'facet_lizenz_year_options': facet_lizenz_year_options,
         'facet_amount_bucket_options': facet_amount_bucket_options,
-        'facet_expiry_bucket_options': facet_expiry_bucket_options,
+        'facet_last_paid_year_options': facet_last_paid_year_options,
         'facet_lg_options': facet_lg_options,
         'customer_suggestions': customer_suggestions,
         'selected_filter_chips': selected_filter_chips,
@@ -2014,10 +1963,22 @@ def terminate_crane(request, pk):
     crane = get_object_or_404(Crane, pk=pk)
 
     if not crane.is_active:
-        messages.error(request, f'ID {crane.id}: already inactive — termination aborted.')
+        error_msg = f'ID {crane.id}: already inactive — termination aborted.'
+        if request.headers.get('Content-Type') == 'application/json':
+            return JsonResponse({'success': False, 'error': error_msg}, status=400)
+        messages.error(request, error_msg)
         return redirect('update_rg')
 
-    reason = request.POST.get('reason', '').strip()
+    # Handle JSON payload for AJAX
+    reason = ''
+    if request.headers.get('Content-Type') == 'application/json':
+        try:
+            data = json.loads(request.body)
+            reason = data.get('reason', '').strip()
+        except (json.JSONDecodeError, ValueError):
+            reason = ''
+    else:
+        reason = request.POST.get('reason', '').strip()
 
     crane.is_active = False
     crane.save(update_fields=['is_active'])
@@ -2036,6 +1997,11 @@ def terminate_crane(request, pk):
         crane=crane,
         details=f'Lease terminated early. Reason: {reason or "(none)"}.',
     )
+    
+    # Handle AJAX request
+    if request.headers.get('Content-Type') == 'application/json':
+        return JsonResponse({'success': True, 'is_active': crane.is_active})
+    
     return redirect('update_rg')
 
 
@@ -2119,6 +2085,47 @@ def delete_crane(request, pk):
 def terminations_list(request):
     """Display all early-termination records, newest first."""
     queryset = Termination.objects.select_related('crane', 'terminated_by').order_by('-terminated_at')
+
+    if request.GET.get('export') == 'true':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="termination_records.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'ID', 'Kran Typ', 'Fabrik Nr', 'Kunde', 'LG', 'Kundenummer',
+            'Version', 'Serien Nr', 'Telefon', 'IP', 'Rueckmeldung', 'IT Nr',
+            'Kundenkran', 'Lizenz Ja', 'Lizenzdatum', 'Bezahlt bis Rg.erstellt',
+            'Servicemeldung', 'Amount', 'Status', 'Terminated At', 'Terminated By', 'Reason'
+        ])
+
+        for item in queryset:
+            writer.writerow([
+                item.crane.id,
+                item.crane.kran_typ,
+                item.crane.fabrik_nr,
+                item.crane.kunde,
+                item.crane.lg,
+                item.crane.kundenummer,
+                item.crane.version,
+                item.crane.serien_nr,
+                item.crane.tel_nr,
+                item.crane.ip,
+                item.crane.rueckmeldung,
+                item.crane.it_nr,
+                item.crane.kundenkran,
+                item.crane.lizenz_ja,
+                item.original_lizenzdatum,
+                item.original_expiry_date,
+                item.crane.servicemeldung,
+                item.crane.amount,
+                'Terminated',
+                item.terminated_at.strftime('%Y-%m-%d %H:%M:%S') if item.terminated_at else '',
+                item.terminated_by.username if item.terminated_by else '',
+                item.termination_reason,
+            ])
+
+        return response
+
     paginator = Paginator(queryset, 10)
     page_obj = paginator.get_page(request.GET.get('page'))
     return render(request, 'terminations.html', {'page_obj': page_obj})
@@ -2128,6 +2135,25 @@ def terminations_list(request):
 @never_cache
 def history_list(request):
     queryset = ChangeHistory.objects.select_related('changed_by', 'crane').all()
+
+    if request.GET.get('export') == 'true':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="change_history.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow(['Changed At', 'User', 'Action', 'Crane ID', 'Kunde', 'Details'])
+
+        for item in queryset:
+            writer.writerow([
+                item.changed_at.strftime('%Y-%m-%d %H:%M:%S') if item.changed_at else '',
+                item.changed_by.username if item.changed_by else 'System',
+                item.action,
+                item.crane_display_id,
+                item.crane_kunde,
+                item.details,
+            ])
+
+        return response
 
     paginator = Paginator(queryset, 20)
     page_obj = paginator.get_page(request.GET.get('page'))

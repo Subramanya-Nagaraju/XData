@@ -241,6 +241,11 @@
             color: white;
         }
 
+        .status-btn.active.warning {
+            background: #ffc107;
+            color: #333;
+        }
+
         .status-btn.inactive {
             background: #dc3545;
             color: white;
@@ -355,6 +360,7 @@
         }
 
         function openTerminateModal(pk, kunde) {
+            window._currentTerminatePk = pk;
             document.getElementById('terminateModalMsg').innerHTML =
                 'Are you sure you want to <strong>terminate early</strong> Crane ID <strong>' + pk + '</strong> (' + escapeHtml(kunde) + ')?<br>' +
                 '<span style="color:#dc3545;">This will immediately mark the client as <strong>Inactive</strong>, even if the license has not yet expired.</span>';
@@ -368,8 +374,72 @@
         }
 
         function confirmTerminate() {
-            document.getElementById('terminateReasonHidden').value = document.getElementById('terminateReasonInput').value;
-            document.getElementById('terminateForm').submit();
+            var pk = window._currentTerminatePk;
+            var reason = document.getElementById('terminateReasonInput').value;
+            
+            console.log('confirmTerminate called with pk:', pk);
+            
+            if (!pk) {
+                alert('Error: Could not retrieve crane ID');
+                return;
+            }
+            
+            // Close modal immediately
+            document.getElementById('terminateModal').style.display = 'none';
+            
+            fetch(`/terminate/${pk}/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ reason: reason })
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    console.log('Looking for row with data-crane-id="' + pk + '"');
+                    const row = document.querySelector('tr[data-crane-id="' + pk + '"]');
+                    console.log('Row found:', row);
+                    
+                    if (row) {
+                        console.log('Updating row UI...');
+                        row.classList.add('inactive');
+                        
+                        const statusBtn = row.querySelector('.status-btn');
+                        if (statusBtn) {
+                            statusBtn.classList.remove('active', 'warning');
+                            statusBtn.classList.add('inactive');
+                            statusBtn.textContent = 'Inactive';
+                            statusBtn.disabled = true;
+                            console.log('Updated status button');
+                        }
+                        
+                        // Replace the last cell (terminate button) with a dash
+                        const lastCell = row.lastElementChild;
+                        if (lastCell) {
+                            lastCell.innerHTML = '<span style="color:#999;">-</span>';
+                            console.log('Replaced terminate button cell');
+                        }
+                    } else {
+                        console.warn('Row not found with selector: tr[data-crane-id="' + pk + '"]');
+                        console.log('Attempting page refresh...');
+                        // Fallback: refresh if DOM update fails
+                        setTimeout(() => location.reload(), 500);
+                    }
+                    alert('Crane terminated successfully');
+                } else if (data.error) {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                alert('An error occurred. Please try again.');
+            });
         }
 
         function fetchUpdateTableSection(url, options) {
@@ -500,7 +570,7 @@
                 <input type="hidden" name="ref_status" value="{{ ref_status }}">
                 <input type="hidden" name="ref_lizenz_year" value="{{ ref_lizenz_year }}">
                 <input type="hidden" name="ref_amount_bucket" value="{{ ref_amount_bucket }}">
-                <input type="hidden" name="ref_expiry_bucket" value="{{ ref_expiry_bucket }}">
+                <input type="hidden" name="ref_last_paid_year" value="{{ ref_last_paid_year }}">
                 <input type="hidden" name="ref_lg" value="{{ ref_lg }}">
 
                 <select id="updatePrimaryFieldSelect" name="primary_field">
@@ -530,7 +600,7 @@
                     <input type="hidden" name="ref_status" value="{{ ref_status }}">
                     <input type="hidden" name="ref_lizenz_year" value="{{ ref_lizenz_year }}">
                     <input type="hidden" name="ref_amount_bucket" value="{{ ref_amount_bucket }}">
-                    <input type="hidden" name="ref_expiry_bucket" value="{{ ref_expiry_bucket }}">
+                    <input type="hidden" name="ref_last_paid_year" value="{{ ref_last_paid_year }}">
                     <input type="hidden" name="ref_lg" value="{{ ref_lg }}">
 
                     <label for="page_size">Rows</label>
@@ -613,9 +683,9 @@
                 </div>
 
                 <div class="facet-group">
-                    <h4>Expiry Bucket</h4>
+                    <h4>Last Paid Year</h4>
                     <div class="facet-options">
-                        {% for option in facet_expiry_bucket_options %}
+                        {% for option in facet_last_paid_year_options %}
                         <a href="{{ option.url }}" class="facet-option ajax-refresh-link {% if option.active %}active{% endif %}">{{ option.label }} ({{ option.count }})</a>
                         {% empty %}
                         <span class="facet-empty">No options</span>
@@ -656,17 +726,17 @@
                         <th>Lizenz Ja</th>
                         <th>Lizenzdatum</th>
                         <th>Bezahlt bis Rg.erstellt</th>
+                        <th>Last Paid Year</th>
                         <th>servicemeldung</th>
                         <th>Amount</th>
                         <th>Status</th>
-                        <th>Action</th>
                         <th>Terminate</th>
                         <th>Delete</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for kran in page_obj %}
-                    <tr {% if not kran.is_active %}class="inactive"{% endif %}>
+                    <tr {% if not kran.is_active %}class="inactive"{% endif %} data-crane-id="{{ kran.id }}">
                         <td>{{ kran.id }}</td>
                         <td>{{ kran.kran_typ }}</td>
                         <td>{{ kran.fabrik_nr }}</td>
@@ -682,25 +752,17 @@
                         <td>{{ kran.kundenkran }}</td>
                         <td>{{ kran.lizenz_ja }}</td>
                         <td>{{ kran.lizenzdatum }}</td>
-                        <td>{{ kran.bezahlt_bis_rg_erstellt }}</td>
+                        <td>{{ kran.display_due_date }}</td>
+                        <td>{% if kran.last_paid_year %}{{ kran.last_paid_year }}{% else %}null{% endif %}</td>
                         <td>{{ kran.servicemeldung }}</td>
                         <td>{{ kran.amount }}</td>
                         <td>
                             <button
-                                class="status-btn {% if kran.is_active %}active{% else %}inactive{% endif %}"
-                                title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif not kran.is_active and kran.is_expired %}License is expired. Update the expiry date to activate.{% endif %}"
+                                class="status-btn {% if kran.is_active %}active{% if kran.warning_due_date %} warning{% endif %}{% else %}inactive{% endif %}"
+                                title="{% if not kran.is_active and kran.is_terminated %}This client is terminated{% elif kran.is_active and kran.warning_due_date %}Due date has passed{% endif %}"
                                 onclick="toggleStatus({{ kran.id }}, this)">
                                 {% if kran.is_active %}Active{% else %}Inactive{% endif %}
                             </button>
-                        </td>
-                        <td>
-                            <form method="post" style="display:flex; gap:8px; justify-content:center; align-items:center;">
-                                {% csrf_token %}
-                                <input type="hidden" name="crane_id" value="{{ kran.id }}">
-                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                <input type="text" class="date-input" name="bezahlt_bis_rg_erstellt" value="{{ kran.bezahlt_bis_rg_erstellt }}" placeholder="YYYY-MM-DD" {% if kran.is_terminated %}disabled title="Terminated rows cannot be updated"{% endif %}>
-                                <button type="submit" name="action" value="update_expiry" class="btn" {% if kran.is_terminated %}disabled title="Terminated rows cannot be updated" style="opacity:0.6; cursor:not-allowed;"{% endif %}>Update Expiry</button>
-                            </form>
                         </td>
                         <td style="text-align:center;">
                             {% if kran.is_active %}
@@ -724,7 +786,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="23">No rows found.</td>
+                        <td colspan="22">No rows found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
