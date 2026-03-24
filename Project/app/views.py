@@ -216,23 +216,46 @@ def _matches_due_filter(crane, year, month_num, day_num):
 
 def _paid_due_dates_for_crane(crane):
     """Return paid due dates for a crane.
-
-    Prefer explicit payment history records. If none exist (legacy/imported rows),
-    infer a single paid reference as one year before the current due date.
+    
+    Returns all years from license date to last paid year as paid dates.
+    This ensures searching any year in that range will show the crane as paid.
     """
     due_status = getattr(crane, 'due_status', None)
-    if due_status:
-        paid_due_dates = list(
-            due_status.payment_history.values_list('paid_for_due_date', flat=True)
-        )
-        if paid_due_dates:
-            return sorted(set(paid_due_dates), reverse=True)
-
-    current_due = _current_due_date_for_crane(crane)
-    if not current_due:
+    
+    # Get license date as anchor
+    license_date = _parse_iso_date(crane.lizenzdatum)
+    if not license_date:
+        license_date = _parse_iso_date(crane.rueckmeldung)
+    
+    if not license_date:
         return []
-
-    return [current_due + relativedelta(years=-1)]
+    
+    start_year = license_date.year
+    
+    # Determine end year (last paid year)
+    end_year = start_year
+    
+    if due_status:
+        # Check payment history for explicit paid records
+        latest_payment = due_status.payment_history.order_by('-recorded_at', '-id').first()
+        if latest_payment and latest_payment.paid_for_due_date:
+            paid_date = _parse_iso_date(latest_payment.paid_for_due_date)
+            if paid_date:
+                end_year = paid_date.year
+    
+    # If still at start_year, check current due to infer last paid year
+    if end_year == start_year:
+        current_due = _current_due_date_for_crane(crane)
+        if current_due:
+            end_year = current_due.year - 1
+    
+    # Generate all years from start_year to end_year as Dec 31 of each year
+    paid_dates = []
+    for year in range(start_year, end_year + 1):
+        # Use Dec 31 of each year so month/day filters work intuitively
+        paid_dates.append(_parse_iso_date(f'{year}-12-31'))
+    
+    return sorted(paid_dates, reverse=True)
 
 
 def _paid_years_for_crane(crane):
@@ -514,12 +537,16 @@ def index(request):
     overdue_buckets = {'1-7 days': 0, '8-30 days': 0, '31+ days': 0}
     expiry_buckets = {'0-7 days': 0, '8-30 days': 0, '31+ days': 0}
 
-    active_cranes = Crane.objects.filter(is_active=True).select_related('due_status').order_by('id')
+    # Force fresh database queries by using distinct IDs and re-fetching with select_related
+    active_crane_ids = Crane.objects.filter(is_active=True).values_list('id', flat=True)
+    active_cranes = Crane.objects.filter(id__in=active_crane_ids).select_related('due_status').order_by('id')
+    
     for crane in active_cranes:
         current_due = _current_due_date_for_crane(crane)
         expiry_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
 
-        if current_due and current_due < today_value and (not expiry_date or current_due < expiry_date):
+        # Check for overdue: if current_due is in the past
+        if current_due and current_due < today_value:
             if _date_in_range(current_due) or (not range_from and not range_to):
                 days_overdue = (today_value - current_due).days
                 overdue_rows.append({
@@ -527,6 +554,7 @@ def index(request):
                     'kunde': crane.kunde,
                     'serien_nr': crane.serien_nr,
                     'current_due': current_due,
+                    'display_due_date': _due_display_date_for_crane(crane),
                     'days_overdue': days_overdue,
                 })
 
@@ -537,6 +565,7 @@ def index(request):
                 else:
                     overdue_buckets['31+ days'] += 1
 
+        # Check for expiring soon: if base expiry_date is in the future
         if expiry_date and expiry_date >= today_value and (_date_in_range(expiry_date) or (not range_from and not range_to)):
             days_left = (expiry_date - today_value).days
 
