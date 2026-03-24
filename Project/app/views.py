@@ -1922,9 +1922,7 @@ def create_rg(request):
             messages.error(request, 'Invalid Lizenz Ja value.')
             return render(request, 'create.html', {'form_data': form_data})
 
-        if form_data['lg'] not in ['DE', 'LE']:
-            messages.error(request, 'Invalid LG value.')
-            return render(request, 'create.html', {'form_data': form_data})
+        form_data['lg'] = form_data['lg'].upper()
 
         try:
             lizenzdatum = datetime.strptime(form_data['lizenzdatum'], '%Y-%m-%d').strftime('%Y-%m-%d')
