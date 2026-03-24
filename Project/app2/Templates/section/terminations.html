@@ -295,13 +295,19 @@
 <script>
 var renewTodayIso = new Date().toISOString().split('T')[0];
 
+function isIsoDate(value) {
+	return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 function openRenewModal(terminationId, craneId, kunde, currentExpiry) {
 	var renewForm = document.getElementById('renewForm');
 	renewForm.action = '/renew/' + terminationId + '/';
 
 	var renewDateInput = document.getElementById('renewDateInput');
-	renewDateInput.min = renewTodayIso;
-	renewDateInput.value = currentExpiry && currentExpiry >= renewTodayIso ? currentExpiry : renewTodayIso;
+	var minAllowedDate = isIsoDate(currentExpiry) ? currentExpiry : renewTodayIso;
+	renewDateInput.min = minAllowedDate;
+	renewDateInput.value = minAllowedDate;
+	renewDateInput.dataset.minAllowedDate = minAllowedDate;
 
 	document.getElementById('renewModalText').textContent = 'Crane ID ' + craneId + ' | Client: ' + kunde + (currentExpiry ? ' | Current expiry: ' + currentExpiry : '');
 	document.getElementById('renewModal').style.display = 'flex';
@@ -318,8 +324,9 @@ function submitRenewal() {
 		return;
 	}
 
-	if (renewDateInput.value < renewTodayIso) {
-		alert('Renewal date cannot be in the past.');
+	var minAllowedDate = renewDateInput.dataset.minAllowedDate || renewTodayIso;
+	if (renewDateInput.value < minAllowedDate) {
+		alert('Renewal date cannot be before ' + minAllowedDate + '.');
 		return;
 	}
 

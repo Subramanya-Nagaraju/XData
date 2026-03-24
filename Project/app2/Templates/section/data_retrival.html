@@ -638,7 +638,7 @@
                         <td>{{ kran.kundenkran }}</td>
                         <td>{{ kran.lizenz_ja }}</td>
                         <td>{{ kran.lizenzdatum }}</td>
-                        <td>{{ kran.bezahlt_bis_rg_erstellt }}</td>
+                        <td>{{ kran.display_due_date|default:kran.bezahlt_bis_rg_erstellt }}</td>
                         <td>{% if kran.last_paid_year %}{{ kran.last_paid_year }}{% else %}null{% endif %}</td>
                         <td>{{ kran.servicemeldung }}</td>
                         <td>{{ kran.amount }}</td>

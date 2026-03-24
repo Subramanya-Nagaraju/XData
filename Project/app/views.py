@@ -74,10 +74,9 @@ def _attach_expiry_flag(cranes):
 
 
 def _due_display_date_for_crane(crane):
-    due_status = getattr(crane, 'due_status', None)
-    tracked_due = _parse_iso_date(due_status.next_due_date) if due_status else None
-    if tracked_due:
-        return tracked_due.strftime('%Y-%m-%d')
+    current_due = _current_due_date_for_crane(crane)
+    if current_due:
+        return current_due.strftime('%Y-%m-%d')
     return crane.bezahlt_bis_rg_erstellt
 
 
@@ -169,13 +168,21 @@ def _mark_due_unpaid_in_background(crane):
 
     due_status = getattr(crane, 'due_status', None)
     tracked_due = _parse_iso_date(due_status.next_due_date) if due_status else None
+    
+    # For fresh data with no payment history, use initial due as starting point
+    # For paid data, revert from tracked due
+    current_due_for_unpay = tracked_due if tracked_due else initial_due_date
 
-    if not tracked_due:
-        return None, None, None
-
-    previous_due = tracked_due + relativedelta(years=-1)
+    previous_due = current_due_for_unpay + relativedelta(years=-1)
     if previous_due < initial_due_date:
         return None, None, None
+
+    # Create/update due_status if it doesn't exist (fresh crane)
+    if not due_status:
+        due_status = CraneDueTracking.objects.create(
+            crane=crane,
+            next_due_date=initial_due_date.strftime('%Y-%m-%d')
+        )
 
     with transaction.atomic():
         latest_payment = due_status.payment_history.order_by('-recorded_at', '-id').first()
@@ -208,14 +215,24 @@ def _matches_due_filter(crane, year, month_num, day_num):
 
 
 def _paid_due_dates_for_crane(crane):
-    """Return historical paid due dates for a crane (one entry per paid year)."""
-    initial_due_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
+    """Return paid due dates for a crane.
 
-    if not initial_due_date:
+    Prefer explicit payment history records. If none exist (legacy/imported rows),
+    infer a single paid reference as one year before the current due date.
+    """
+    due_status = getattr(crane, 'due_status', None)
+    if due_status:
+        paid_due_dates = list(
+            due_status.payment_history.values_list('paid_for_due_date', flat=True)
+        )
+        if paid_due_dates:
+            return sorted(set(paid_due_dates), reverse=True)
+
+    current_due = _current_due_date_for_crane(crane)
+    if not current_due:
         return []
 
-    # Paid reference is always one year before the due date stored on the crane row.
-    return [initial_due_date + relativedelta(years=-1)]
+    return [current_due + relativedelta(years=-1)]
 
 
 def _paid_years_for_crane(crane):
@@ -223,21 +240,17 @@ def _paid_years_for_crane(crane):
 
 
 def _last_paid_year_for_crane(crane):
-    initial_due_date = _parse_iso_date(crane.bezahlt_bis_rg_erstellt)
-    if not initial_due_date:
+    due_status = getattr(crane, 'due_status', None)
+    if due_status:
+        latest_payment = due_status.payment_history.order_by('-recorded_at', '-id').first()
+        if latest_payment and latest_payment.paid_for_due_date:
+            return latest_payment.paid_for_due_date.year
+
+    current_due = _current_due_date_for_crane(crane)
+    if not current_due:
         return None
 
-    due_status = getattr(crane, 'due_status', None)
-    if not due_status:
-        return (initial_due_date + relativedelta(years=-1)).year
-
-    if due_status.actual_paid_date:
-        return due_status.actual_paid_date.year
-
-    if due_status.last_paid_at:
-        return due_status.last_paid_at.year
-
-    return (initial_due_date + relativedelta(years=-1)).year
+    return (current_due + relativedelta(years=-1)).year
 
 
 def _matches_paid_filter(crane, year, month_num, day_num):
@@ -375,7 +388,7 @@ def _get_paid_filtered_queryset(request):
         sort_by = 'id'
 
     for crane in queryset:
-        crane.display_due_date = crane.bezahlt_bis_rg_erstellt
+        crane.display_due_date = _due_display_date_for_crane(crane)
         crane.last_paid_year = _last_paid_year_for_crane(crane)
 
     queryset.sort(key=lambda crane: crane.id)
@@ -2013,9 +2026,12 @@ def renew_termination(request, pk):
         messages.error(request, f'ID {crane.id}: invalid date format. Use YYYY-MM-DD.')
         return redirect('terminations_list')
 
-    today_value = timezone.localdate()
-    if parsed_expiry < today_value:
-        messages.error(request, f'ID {crane.id}: renewal date cannot be in the past.')
+    original_expiry = _parse_iso_date(termination.original_expiry_date)
+    if original_expiry and parsed_expiry < original_expiry:
+        messages.error(
+            request,
+            f'ID {crane.id}: renewal date cannot be before the existing Bezahlt bis Rg.erstellt ({original_expiry}).'
+        )
         return redirect('terminations_list')
 
     start_date = _parse_iso_date(crane.lizenzdatum or termination.original_lizenzdatum)
@@ -2023,16 +2039,21 @@ def renew_termination(request, pk):
         messages.error(request, f'ID {crane.id}: renewal date must be after Lizenzdatum.')
         return redirect('terminations_list')
 
-    current_due = _current_due_date_for_crane(crane)
-    if current_due and parsed_expiry <= current_due:
-        messages.error(request, f'ID {crane.id}: renewal date must be after the current due date {current_due}.')
-        return redirect('terminations_list')
+    with transaction.atomic():
+        crane.bezahlt_bis_rg_erstellt = parsed_expiry.strftime('%Y-%m-%d')
+        crane.is_active = True
+        crane.save(update_fields=['bezahlt_bis_rg_erstellt', 'is_active'])
 
-    crane.bezahlt_bis_rg_erstellt = parsed_expiry.strftime('%Y-%m-%d')
-    crane.is_active = True
-    crane.save(update_fields=['bezahlt_bis_rg_erstellt', 'is_active'])
+        due_status, _ = CraneDueTracking.objects.get_or_create(crane=crane)
+        # Renewal resets paid baseline to "one year before renewed due date".
+        # Clear old paid records/snapshots so legacy paid years do not leak forward.
+        due_status.payment_history.all().delete()
+        due_status.next_due_date = parsed_expiry.strftime('%Y-%m-%d')
+        due_status.last_paid_at = None
+        due_status.actual_paid_date = None
+        due_status.save(update_fields=['next_due_date', 'last_paid_at', 'actual_paid_date'])
 
-    termination.delete()
+        termination.delete()
 
     _log_change(
         request,

@@ -13,6 +13,10 @@ env/
 db.sqlite3
 Project/db.sqlite3
 
+# Client data exports (dynamic, not versioned)
+Project/data/
+*.csv
+
 # Tooling caches
 .pytest_cache/
 .mypy_cache/
